@@ -7,15 +7,19 @@ import {
   Check,
   ChevronRight,
   Copy,
+  Download,
   Edit2,
   HelpCircle,
   LogOut,
   Phone,
+  QrCode,
   Shield,
   Star,
   User,
+  X,
 } from "lucide-react";
-import { useState } from "react";
+import QRCode from "qrcode";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { Screen } from "../App";
 import type { Profile } from "../backend.d";
@@ -42,6 +46,21 @@ export default function ProfileScreen({
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(profile?.name ?? "");
   const [editPhone, setEditPhone] = useState(profile?.phone ?? "");
+  const [showQR, setShowQR] = useState(false);
+  const qrCanvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    if (showQR && profile?.upiId && qrCanvasRef.current) {
+      QRCode.toCanvas(qrCanvasRef.current, profile.upiId, {
+        width: 220,
+        margin: 2,
+        color: {
+          dark: "#1a0540",
+          light: "#ffffff",
+        },
+      }).catch(() => {});
+    }
+  }, [showQR, profile?.upiId]);
 
   const { data: transactions } = useGetTransactionHistory();
   const { data: balance } = useGetWalletBalance();
@@ -119,6 +138,15 @@ export default function ProfileScreen({
           >
             {profile?.upiId}
             <Copy className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            data-ocid="profile.my_qr_button"
+            onClick={() => setShowQR(true)}
+            className="mt-3 flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-white/15 border border-white/25 text-white text-xs font-bold hover:bg-white/25 transition-colors"
+          >
+            <QrCode className="w-3.5 h-3.5" />
+            My QR Code
           </button>
         </div>
       </div>
@@ -389,6 +417,87 @@ export default function ProfileScreen({
           </p>
         </div>
       </div>
+
+      {/* QR Code Modal */}
+      {showQR && (
+        <dialog
+          data-ocid="profile.qr_modal"
+          open
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm w-full h-full max-w-none max-h-none m-0 p-0 border-0"
+          onClick={() => setShowQR(false)}
+          onKeyDown={(e) => e.key === "Escape" && setShowQR(false)}
+        >
+          <div
+            className="w-full max-w-sm bg-card rounded-t-3xl p-6 pb-10 flex flex-col items-center gap-5 animate-slide-up"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+            role="presentation"
+          >
+            {/* Header */}
+            <div className="w-full flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-display font-black text-foreground">
+                  My QR Code
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  Anyone can scan to pay you
+                </p>
+              </div>
+              <button
+                type="button"
+                data-ocid="profile.qr_modal.close_button"
+                onClick={() => setShowQR(false)}
+                className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* QR Canvas */}
+            <div className="p-4 rounded-3xl bg-white shadow-lg border border-border/30">
+              <canvas ref={qrCanvasRef} className="block rounded-xl" />
+            </div>
+
+            {/* UPI ID */}
+            <div className="w-full bg-muted rounded-2xl px-4 py-3 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">
+                  UPI ID
+                </p>
+                <p className="text-sm font-bold text-foreground font-mono mt-0.5">
+                  {profile?.upiId}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleCopyUpiId}
+                className="w-8 h-8 rounded-xl bg-background flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors border border-border/50"
+              >
+                <Copy className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Download */}
+            <Button
+              data-ocid="profile.qr_modal.download_button"
+              className="w-full h-12 rounded-2xl font-bold gradient-purple text-white border-0 shadow-purple"
+              onClick={() => {
+                const canvas = qrCanvasRef.current;
+                if (!canvas) return;
+                const url = canvas.toDataURL("image/png");
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `${profile?.upiId ?? "swiftpay"}-qr.png`;
+                a.click();
+                toast.success("QR code downloaded!");
+              }}
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Download QR Code
+            </Button>
+          </div>
+        </dialog>
+      )}
     </div>
   );
 }
