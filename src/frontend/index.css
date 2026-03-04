@@ -1,0 +1,347 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Mona Sans - Display */
+@font-face {
+  font-family: "Mona Sans";
+  src: url("/assets/fonts/MonaSans[wdth,wght].woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Plus Jakarta Sans - Body */
+@font-face {
+  font-family: "Plus Jakarta Sans";
+  src: url("/assets/fonts/PlusJakartaSans[wght].woff2") format("woff2");
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Geist Mono - Mono */
+@font-face {
+  font-family: "Geist Mono";
+  src: url("/assets/fonts/GeistMono[wght].woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@layer base {
+  :root {
+    --radius: 0.875rem;
+
+    /* SwiftPay Purple Brand System */
+    --background: 0.97 0.01 290;
+    --foreground: 0.14 0.04 290;
+    --card: 1 0 0;
+    --card-foreground: 0.14 0.04 290;
+    --popover: 1 0 0;
+    --popover-foreground: 0.14 0.04 290;
+
+    /* Primary: Deep Purple */
+    --primary: 0.42 0.22 290;
+    --primary-foreground: 0.99 0 0;
+
+    /* Secondary: Soft Lavender */
+    --secondary: 0.93 0.04 290;
+    --secondary-foreground: 0.3 0.15 290;
+
+    --muted: 0.94 0.02 290;
+    --muted-foreground: 0.52 0.06 290;
+
+    --accent: 0.92 0.05 290;
+    --accent-foreground: 0.35 0.18 290;
+
+    --destructive: 0.56 0.22 27;
+    --destructive-foreground: 0.99 0 0;
+
+    --border: 0.9 0.03 290;
+    --input: 0.9 0.03 290;
+    --ring: 0.42 0.22 290;
+
+    /* Brand colors */
+    --brand-purple: 0.42 0.22 290;
+    --brand-purple-light: 0.75 0.14 290;
+    --brand-purple-dark: 0.28 0.2 290;
+    --brand-purple-xlight: 0.93 0.06 290;
+
+    --brand-blue: 0.52 0.18 250;
+    --brand-green: 0.56 0.18 145;
+    --brand-orange: 0.7 0.19 52;
+    --brand-pink: 0.65 0.22 355;
+    --brand-yellow: 0.78 0.19 82;
+    --brand-teal: 0.58 0.16 185;
+    --brand-red: 0.56 0.22 27;
+
+    --success: 0.56 0.18 145;
+    --success-foreground: 0.99 0 0;
+    --warning: 0.78 0.19 82;
+    --warning-foreground: 0.1 0 0;
+
+    --chart-1: 0.42 0.22 290;
+    --chart-2: 0.52 0.18 250;
+    --chart-3: 0.56 0.18 145;
+    --chart-4: 0.7 0.19 52;
+    --chart-5: 0.65 0.22 355;
+
+    --sidebar: 0.42 0.22 290;
+    --sidebar-foreground: 0.99 0 0;
+    --sidebar-primary: 0.99 0 0;
+    --sidebar-primary-foreground: 0.42 0.22 290;
+    --sidebar-accent: 0.35 0.18 290;
+    --sidebar-accent-foreground: 0.99 0 0;
+    --sidebar-border: 0.35 0.18 290;
+    --sidebar-ring: 0.75 0.14 290;
+  }
+
+  .dark {
+    --background: 0.14 0.04 290;
+    --foreground: 0.97 0.01 290;
+    --card: 0.19 0.05 290;
+    --card-foreground: 0.97 0.01 290;
+    --popover: 0.22 0.05 290;
+    --popover-foreground: 0.97 0.01 290;
+    --primary: 0.65 0.2 290;
+    --primary-foreground: 0.1 0.04 290;
+    --secondary: 0.25 0.07 290;
+    --secondary-foreground: 0.9 0.03 290;
+    --muted: 0.22 0.05 290;
+    --muted-foreground: 0.62 0.08 290;
+    --accent: 0.28 0.08 290;
+    --accent-foreground: 0.9 0.03 290;
+    --destructive: 0.65 0.22 27;
+    --destructive-foreground: 0.99 0 0;
+    --border: 1 0 0 / 10%;
+    --input: 1 0 0 / 15%;
+    --ring: 0.65 0.2 290;
+    --chart-1: 0.65 0.2 290;
+    --chart-2: 0.62 0.18 250;
+    --chart-3: 0.62 0.18 145;
+    --chart-4: 0.75 0.19 52;
+    --chart-5: 0.7 0.22 355;
+    --sidebar: 0.19 0.05 290;
+    --sidebar-foreground: 0.97 0.01 290;
+    --sidebar-primary: 0.65 0.2 290;
+    --sidebar-primary-foreground: 0.99 0 0;
+    --sidebar-accent: 0.25 0.07 290;
+    --sidebar-accent-foreground: 0.97 0.01 290;
+    --sidebar-border: 1 0 0 / 10%;
+    --sidebar-ring: 0.65 0.2 290;
+  }
+
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-body;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: "Mona Sans", sans-serif;
+  }
+  .font-body {
+    font-family: "Plus Jakarta Sans", sans-serif;
+  }
+  .font-mono {
+    font-family: "Geist Mono", monospace;
+  }
+
+  /* Mobile-first phone container */
+  .phone-container {
+    @apply min-h-screen bg-background;
+    max-width: 430px;
+    margin: 0 auto;
+  }
+
+  /* Amount display */
+  .amount-display {
+    font-family: "Geist Mono", monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Gradient backgrounds */
+  .gradient-purple {
+    background: linear-gradient(135deg, oklch(0.42 0.22 290) 0%, oklch(0.35 0.2 270) 100%);
+  }
+
+  .gradient-purple-subtle {
+    background: linear-gradient(135deg, oklch(0.93 0.06 290) 0%, oklch(0.95 0.04 250) 100%);
+  }
+
+  /* Card shadow */
+  .card-shadow {
+    box-shadow: 0 4px 24px oklch(0.42 0.22 290 / 12%), 0 1px 4px oklch(0.42 0.22 290 / 8%);
+  }
+
+  .card-shadow-lg {
+    box-shadow: 0 8px 40px oklch(0.42 0.22 290 / 18%), 0 2px 8px oklch(0.42 0.22 290 / 10%);
+  }
+
+  /* Tap highlight */
+  .tap-highlight {
+    -webkit-tap-highlight-color: oklch(0.42 0.22 290 / 10%);
+  }
+
+  /* Safe area padding for mobile */
+  .pb-safe {
+    padding-bottom: calc(env(safe-area-inset-bottom) + 4rem);
+  }
+
+  /* Number pad button */
+  .numpad-btn {
+    @apply flex items-center justify-center w-16 h-16 rounded-full text-xl font-semibold;
+    background: oklch(0.93 0.04 290);
+    color: oklch(0.14 0.04 290);
+    transition: all 0.1s ease;
+  }
+  .numpad-btn:active {
+    transform: scale(0.92);
+    background: oklch(0.87 0.07 290);
+  }
+
+  /* Quick action button */
+  .quick-action-btn {
+    @apply flex flex-col items-center gap-1.5 tap-highlight;
+  }
+  .quick-action-icon {
+    @apply w-14 h-14 rounded-2xl flex items-center justify-center;
+    box-shadow: 0 2px 8px oklch(0 0 0 / 12%);
+  }
+}
+
+/* Desktop centering & background */
+@media (min-width: 431px) {
+  body {
+    background: oklch(0.92 0.04 290);
+  }
+  .phone-container {
+    box-shadow: 0 0 80px oklch(0.42 0.22 290 / 20%);
+    min-height: 100vh;
+  }
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: oklch(0.75 0.14 290 / 40%);
+  border-radius: 2px;
+}
+
+/* ===================== Payment Success Animation ===================== */
+@keyframes payment-ripple {
+  0% {
+    transform: scale(0.3);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(3.5);
+    opacity: 0;
+  }
+}
+
+@keyframes payment-confetti-pop {
+  0% {
+    transform: rotate(var(--angle)) translateX(0) scale(1);
+    opacity: 1;
+  }
+  60% {
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(var(--angle)) translateX(var(--dist)) scale(0.3);
+    opacity: 0;
+  }
+}
+
+@keyframes payment-bounce-in {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+  80% {
+    transform: scale(0.95);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.payment-ripple {
+  position: absolute;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  border: 2px solid oklch(1 0 0 / 18%);
+  animation: payment-ripple 2.4s ease-out infinite;
+}
+
+.payment-ripple-1 {
+  animation-delay: 0s;
+}
+.payment-ripple-2 {
+  animation-delay: 0.6s;
+}
+.payment-ripple-3 {
+  animation-delay: 1.2s;
+}
+
+.payment-confetti-dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin: -4px;
+  animation: payment-confetti-pop 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(0.3s + var(--delay, 0s));
+}
+
+.payment-confetti-dot:nth-child(odd) {
+  background: oklch(0.85 0.18 82);
+  border-radius: 2px;
+  width: 6px;
+  height: 10px;
+}
+.payment-confetti-dot:nth-child(3n) {
+  background: oklch(0.85 0.15 145);
+  width: 9px;
+  height: 9px;
+}
+.payment-confetti-dot:nth-child(3n+1) {
+  background: oklch(0.9 0.14 52);
+  width: 7px;
+  height: 7px;
+}
+.payment-confetti-dot:nth-child(3n+2) {
+  background: oklch(0.95 0.05 0);
+  width: 5px;
+  height: 5px;
+  border-radius: 1px;
+}
+
+/* shadow-purple utility */
+.shadow-purple {
+  box-shadow: 0 4px 20px oklch(0.42 0.22 290 / 45%);
+}
