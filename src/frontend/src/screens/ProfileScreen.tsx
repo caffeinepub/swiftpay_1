@@ -18,8 +18,7 @@ import {
   User,
   X,
 } from "lucide-react";
-import QRCode from "qrcode";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import type { Screen } from "../App";
 import type { Profile } from "../backend.d";
@@ -47,19 +46,14 @@ export default function ProfileScreen({
   const [editName, setEditName] = useState(profile?.name ?? "");
   const [editPhone, setEditPhone] = useState(profile?.phone ?? "");
   const [showQR, setShowQR] = useState(false);
-  const qrCanvasRef = useRef<HTMLCanvasElement>(null);
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    if (showQR && profile?.upiId && qrCanvasRef.current) {
-      QRCode.toCanvas(qrCanvasRef.current, profile.upiId, {
-        width: 220,
-        margin: 2,
-        color: {
-          dark: "#1a0540",
-          light: "#ffffff",
-        },
-      }).catch(() => {});
-    }
+    if (!showQR || !profile?.upiId) return;
+    // Use QR Server API to generate QR code image
+    const upiId = encodeURIComponent(profile.upiId);
+    const url = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${upiId}&bgcolor=ffffff&color=1a0540&margin=2&format=png`;
+    setQrDataUrl(url);
   }, [showQR, profile?.upiId]);
 
   const { data: transactions } = useGetTransactionHistory();
@@ -453,9 +447,19 @@ export default function ProfileScreen({
               </button>
             </div>
 
-            {/* QR Canvas */}
+            {/* QR Code Image */}
             <div className="p-4 rounded-3xl bg-white shadow-lg border border-border/30">
-              <canvas ref={qrCanvasRef} className="block rounded-xl" />
+              {qrDataUrl ? (
+                <img
+                  src={qrDataUrl}
+                  alt={`QR Code for ${profile?.upiId}`}
+                  className="block rounded-xl w-[220px] h-[220px]"
+                />
+              ) : (
+                <div className="w-[220px] h-[220px] flex items-center justify-center bg-muted rounded-xl">
+                  <QrCode className="w-12 h-12 text-muted-foreground animate-pulse" />
+                </div>
+              )}
             </div>
 
             {/* UPI ID */}
@@ -481,15 +485,23 @@ export default function ProfileScreen({
             <Button
               data-ocid="profile.qr_modal.download_button"
               className="w-full h-12 rounded-2xl font-bold gradient-purple text-white border-0 shadow-purple"
-              onClick={() => {
-                const canvas = qrCanvasRef.current;
-                if (!canvas) return;
-                const url = canvas.toDataURL("image/png");
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = `${profile?.upiId ?? "swiftpay"}-qr.png`;
-                a.click();
-                toast.success("QR code downloaded!");
+              onClick={async () => {
+                if (!qrDataUrl) return;
+                try {
+                  const response = await fetch(qrDataUrl);
+                  const blob = await response.blob();
+                  const objectUrl = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = objectUrl;
+                  a.download = `${profile?.upiId ?? "swiftpay"}-qr.png`;
+                  a.click();
+                  URL.revokeObjectURL(objectUrl);
+                  toast.success("QR code downloaded!");
+                } catch {
+                  toast.error(
+                    "Download failed. Try saving the QR image manually.",
+                  );
+                }
               }}
             >
               <Download className="w-4 h-4 mr-2" />
