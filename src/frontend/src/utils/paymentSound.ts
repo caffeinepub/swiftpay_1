@@ -1,4 +1,19 @@
 /**
+ * Triggers a short haptic vibration on supported mobile devices.
+ * Pattern: two quick pulses (like PhonePe's success haptic).
+ */
+export function triggerPaymentVibration(): void {
+  try {
+    if (navigator.vibrate) {
+      // Short double-pulse: vibrate 80ms, pause 40ms, vibrate 120ms
+      navigator.vibrate([80, 40, 120]);
+    }
+  } catch {
+    // Silently fail if vibration API is not supported
+  }
+}
+
+/**
  * Plays a PhonePe-style payment success sound using the Web Audio API.
  * Two ascending chime notes (like the iconic UPI success tone).
  */

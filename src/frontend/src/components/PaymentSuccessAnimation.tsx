@@ -1,6 +1,9 @@
 import { CheckCircle2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { playPaymentSuccessSound } from "../utils/paymentSound";
+import {
+  playPaymentSuccessSound,
+  triggerPaymentVibration,
+} from "../utils/paymentSound";
 
 const CONFETTI_DOTS = [
   { id: "c00", angle: 0, delay: 0, dist: 110 },
@@ -45,8 +48,9 @@ export default function PaymentSuccessAnimation({
   useEffect(() => {
     // Phase: enter → show after 100ms (allow initial render)
     const t1 = setTimeout(() => setPhase("show"), 100);
-    // Play PhonePe-style chime sound on mount
+    // Play PhonePe-style chime sound and haptic vibration on mount
     playPaymentSuccessSound();
+    triggerPaymentVibration();
     return () => clearTimeout(t1);
   }, []);
 
