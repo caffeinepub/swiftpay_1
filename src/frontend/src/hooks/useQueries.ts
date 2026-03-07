@@ -428,6 +428,8 @@ export function useLookupProfileByPhone(phone: string) {
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
+export const SWIFTPAY_LOGGED_IN_KEY = "swiftpay_logged_in";
+
 export function useSignup() {
   const { actor } = useActor();
   const queryClient = useQueryClient();
@@ -447,6 +449,7 @@ export function useSignup() {
       await actor.signup(name, phone, passwordHash, mpinHash);
     },
     onSuccess: () => {
+      localStorage.setItem(SWIFTPAY_LOGGED_IN_KEY, "true");
       queryClient.invalidateQueries({ queryKey: ["callerProfile"] });
       queryClient.invalidateQueries({ queryKey: ["hasAccount"] });
     },
@@ -467,7 +470,10 @@ export function useLogin() {
       if (!actor) throw new Error("Actor not available");
       return actor.login(phone, passwordHash);
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      if (data) {
+        localStorage.setItem(SWIFTPAY_LOGGED_IN_KEY, "true");
+      }
       queryClient.invalidateQueries({ queryKey: ["callerProfile"] });
       queryClient.invalidateQueries({ queryKey: ["hasAccount"] });
     },

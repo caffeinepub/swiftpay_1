@@ -12,7 +12,9 @@ import Principal "mo:core/Principal";
 
 import AccessControl "authorization/access-control";
 import MixinAuthorization "authorization/MixinAuthorization";
+import Migration "migration";
 
+(with migration = Migration.run)
 actor {
   // Types
   public type Profile = {
@@ -178,6 +180,27 @@ actor {
     notifications.add(principal, updatedNotifications);
   };
 
+  func checkAndMigrateProfile(caller : Principal) : ?Profile {
+    switch (profiles.get(caller)) {
+      case (null) {
+        // Try to migrate profile via principalToPhone
+        switch (principalToPhone.get(caller)) {
+          case (?phone) {
+            switch (getProfileByPhone(phone)) {
+              case (?profile) {
+                profiles.add(caller, profile);
+                ?profile;
+              };
+              case (null) { null };
+            };
+          };
+          case (null) { null };
+        };
+      };
+      case (?profile) { ?profile };
+    };
+  };
+
   // Account Management Functions
   public shared ({ caller }) func signup(name : Text, phone : Text, passwordHash : Text, mpinHash : Text) : async () {
     if (accounts.containsKey(phone)) {
@@ -211,11 +234,47 @@ actor {
       case (?account) {
         if (account.passwordHash != passwordHash) { return null };
 
+        // Find and remove old principal entries for this phone
+        var oldPrincipal : ?Principal = null;
+        for ((principal, ph) in principalToPhone.entries()) {
+          if (ph == phone) {
+            oldPrincipal := ?principal;
+          };
+        };
+
+        switch (oldPrincipal) {
+          case (?oldP) {
+            principalToPhone.remove(oldP);
+            profiles.remove(oldP);
+          };
+          case (null) {};
+        };
+
+        // Update principalToPhone with new caller
         principalToPhone.add(caller, phone);
+
+        // Assign user role to new caller if not already present
         if (not AccessControl.hasPermission(accessControlState, caller, #user)) {
           accessControlState.userRoles.add(caller, #user);
         };
-        getProfileByPhone(phone);
+
+        // Update accounts map with latest principalId
+        let updatedAccount : Account = {
+          phone = account.phone;
+          passwordHash = account.passwordHash;
+          mpinHash = account.mpinHash;
+          principalId = caller;
+        };
+        accounts.add(phone, updatedAccount);
+
+        // Migrate profile to new caller principal
+        switch (getProfileByPhone(phone)) {
+          case (null) { null };
+          case (?profile) {
+            profiles.add(caller, profile);
+            ?profile;
+          };
+        };
       };
     };
   };
@@ -287,14 +346,46 @@ actor {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can view profiles");
     };
-    profiles.get(caller);
+    switch (profiles.get(caller)) {
+      case (null) {
+        switch (principalToPhone.get(caller)) {
+          case (?phone) {
+            switch (getProfileByPhone(phone)) {
+              case (?profile) {
+                profiles.add(caller, profile);
+                ?profile;
+              };
+              case (null) { Runtime.trap("Profile not found") };
+            };
+          };
+          case (null) { Runtime.trap("Profile not found") };
+        };
+      };
+      case (?profile) { ?profile };
+    };
   };
 
   public query ({ caller }) func getUserProfile(user : Principal) : async ?Profile {
     if (caller != user and not AccessControl.isAdmin(accessControlState, caller)) {
       Runtime.trap("Unauthorized: Can only view your own profile");
     };
-    profiles.get(user);
+    switch (profiles.get(user)) {
+      case (null) {
+        switch (principalToPhone.get(user)) {
+          case (?phone) {
+            switch (getProfileByPhone(phone)) {
+              case (?profile) {
+                profiles.add(user, profile);
+                ?profile;
+              };
+              case (null) { Runtime.trap("Profile not found") };
+            };
+          };
+          case (null) { Runtime.trap("Profile not found") };
+        };
+      };
+      case (?profile) { ?profile };
+    };
   };
 
   // Lookup profile by UPI ID without authentication
@@ -316,10 +407,26 @@ actor {
     };
 
     let upiId = phone # "@swiftpay";
-    let existingProfile = profiles.get(caller);
-    let walletBalance = switch (existingProfile) {
-      case (null) { 1000.0 };
-      case (?profile) { profile.walletBalance };
+    var walletBalance = 1000.0;
+
+    switch (profiles.get(caller)) {
+      case (null) {
+        switch (principalToPhone.get(caller)) {
+          case (?ph) {
+            switch (getProfileByPhone(ph)) {
+              case (?profile) {
+                profiles.add(caller, profile);
+                walletBalance := profile.walletBalance;
+              };
+              case (null) {};
+            };
+          };
+          case (null) {};
+        };
+      };
+      case (?profile) {
+        walletBalance := profile.walletBalance;
+      };
     };
 
     let profile : Profile = {
@@ -351,10 +458,26 @@ actor {
     };
 
     let upiId = phone # "@swiftpay";
-    let existingProfile = profiles.get(caller);
-    let walletBalance = switch (existingProfile) {
-      case (null) { 1000.0 };
-      case (?profile) { profile.walletBalance };
+    var walletBalance = 1000.0;
+
+    switch (profiles.get(caller)) {
+      case (null) {
+        switch (principalToPhone.get(caller)) {
+          case (?ph) {
+            switch (getProfileByPhone(ph)) {
+              case (?profile) {
+                profiles.add(caller, profile);
+                walletBalance := profile.walletBalance;
+              };
+              case (null) {};
+            };
+          };
+          case (null) {};
+        };
+      };
+      case (?profile) {
+        walletBalance := profile.walletBalance;
+      };
     };
 
     let profile : Profile = {
@@ -371,7 +494,23 @@ actor {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can view profiles");
     };
-    profiles.get(caller);
+    switch (profiles.get(caller)) {
+      case (null) {
+        switch (principalToPhone.get(caller)) {
+          case (?phone) {
+            switch (getProfileByPhone(phone)) {
+              case (?profile) {
+                profiles.add(caller, profile);
+                ?profile;
+              };
+              case (null) { Runtime.trap("Profile not found") };
+            };
+          };
+          case (null) { Runtime.trap("Profile not found") };
+        };
+      };
+      case (?profile) { ?profile };
+    };
   };
 
   public query ({ caller }) func getWalletBalance() : async Float {
@@ -380,7 +519,20 @@ actor {
     };
 
     switch (profiles.get(caller)) {
-      case (null) { Runtime.trap("Profile not found") };
+      case (null) {
+        switch (principalToPhone.get(caller)) {
+          case (?phone) {
+            switch (getProfileByPhone(phone)) {
+              case (?profile) {
+                profiles.add(caller, profile);
+                profile.walletBalance;
+              };
+              case (null) { Runtime.trap("Profile not found") };
+            };
+          };
+          case (null) { Runtime.trap("Profile not found") };
+        };
+      };
       case (?profile) { profile.walletBalance };
     };
   };
@@ -416,35 +568,48 @@ actor {
       Runtime.trap("Amount must be positive");
     };
 
-    switch (profiles.get(caller)) {
-      case (null) { Runtime.trap("Profile not found") };
-      case (?profile) {
-        let newBalance = profile.walletBalance + amount;
-        let updatedProfile : Profile = {
-          name = profile.name;
-          phone = profile.phone;
-          upiId = profile.upiId;
-          walletBalance = newBalance;
+    var profile : Profile = switch (profiles.get(caller)) {
+      case (null) {
+        switch (principalToPhone.get(caller)) {
+          case (?phone) {
+            switch (getProfileByPhone(phone)) {
+              case (?p) {
+                profiles.add(caller, p);
+                p;
+              };
+              case (null) { Runtime.trap("Profile not found") };
+            };
+          };
+          case (null) { Runtime.trap("Profile not found") };
         };
-        profiles.add(caller, updatedProfile);
-
-        let transaction : Transaction = {
-          id = nextTransactionId;
-          fromUpiId = profile.upiId;
-          toUpiId = profile.upiId;
-          amount;
-          type_ = #topUp;
-          note = ?"Wallet Top-up";
-          timestamp = Time.now();
-          status = #success;
-        };
-
-        transactions.add(nextTransactionId, transaction);
-        nextTransactionId += 1;
-
-        addNotification(caller, "Wallet topped up with " # amount.toText(), #transactionAlert);
       };
+      case (?p) { p };
     };
+
+    let newBalance = profile.walletBalance + amount;
+    let updatedProfile : Profile = {
+      name = profile.name;
+      phone = profile.phone;
+      upiId = profile.upiId;
+      walletBalance = newBalance;
+    };
+    profiles.add(caller, updatedProfile);
+
+    let transaction : Transaction = {
+      id = nextTransactionId;
+      fromUpiId = profile.upiId;
+      toUpiId = profile.upiId;
+      amount;
+      type_ = #topUp;
+      note = ?"Wallet Top-up";
+      timestamp = Time.now();
+      status = #success;
+    };
+
+    transactions.add(nextTransactionId, transaction);
+    nextTransactionId += 1;
+
+    addNotification(caller, "Wallet topped up with " # amount.toText(), #transactionAlert);
   };
 
   public shared ({ caller }) func sendMoney(to : Text, amount : Float, note : ?Text, confirmedByMpin : Bool) : async () {
@@ -460,74 +625,87 @@ actor {
       Runtime.trap("Amount must be positive");
     };
 
-    switch (profiles.get(caller)) {
-      case (null) { Runtime.trap("Sender profile not found") };
-      case (?senderProfile) {
-        if (senderProfile.walletBalance < amount) {
-          Runtime.trap("Insufficient funds");
-        };
-
-        let recipientProfileOpt = if (to.contains(#char '@')) {
-          getProfileByUpi(to);
-        } else {
-          getProfileByPhone(to);
-        };
-
-        let recipientProfile = switch (recipientProfileOpt) {
-          case (null) { Runtime.trap("Recipient not found") };
-          case (?profile) { profile };
-        };
-
-        let updatedSender : Profile = {
-          name = senderProfile.name;
-          phone = senderProfile.phone;
-          upiId = senderProfile.upiId;
-          walletBalance = senderProfile.walletBalance - amount;
-        };
-        profiles.add(caller, updatedSender);
-
-        let updatedRecipient : Profile = {
-          name = recipientProfile.name;
-          phone = recipientProfile.phone;
-          upiId = recipientProfile.upiId;
-          walletBalance = recipientProfile.walletBalance + amount;
-        };
-
-        switch (getPrincipalByUpiId(recipientProfile.upiId)) {
-          case (null) { Runtime.trap("Recipient principal not found") };
-          case (?recipientPrincipal) {
-            profiles.add(recipientPrincipal, updatedRecipient);
-
-            let transaction : Transaction = {
-              id = nextTransactionId;
-              fromUpiId = senderProfile.upiId;
-              toUpiId = recipientProfile.upiId;
-              amount;
-              type_ = #send;
-              note;
-              timestamp = Time.now();
-              status = #success;
+    var senderProfile : Profile = switch (profiles.get(caller)) {
+      case (null) {
+        switch (principalToPhone.get(caller)) {
+          case (?phone) {
+            switch (getProfileByPhone(phone)) {
+              case (?p) {
+                profiles.add(caller, p);
+                p;
+              };
+              case (null) { Runtime.trap("Sender profile not found") };
             };
-            transactions.add(nextTransactionId, transaction);
-
-            let receivedTransaction : Transaction = {
-              id = nextTransactionId + 1;
-              fromUpiId = senderProfile.upiId;
-              toUpiId = recipientProfile.upiId;
-              amount;
-              type_ = #receive;
-              note;
-              timestamp = Time.now();
-              status = #success;
-            };
-            transactions.add(nextTransactionId + 1, receivedTransaction);
-
-            nextTransactionId += 2;
-
-            addNotification(caller, "Sent " # amount.toText() # " to " # recipientProfile.name, #transactionAlert);
-            addNotification(recipientPrincipal, "Received " # amount.toText() # " from " # senderProfile.name, #transactionAlert);
           };
+          case (null) { Runtime.trap("Sender profile not found") };
         };
+      };
+      case (?p) { p };
+    };
+
+    if (senderProfile.walletBalance < amount) {
+      Runtime.trap("Insufficient funds");
+    };
+
+    let recipientProfileOpt = if (to.contains(#char '@')) {
+      getProfileByUpi(to);
+    } else {
+      getProfileByPhone(to);
+    };
+
+    let recipientProfile = switch (recipientProfileOpt) {
+      case (null) { Runtime.trap("Recipient not found") };
+      case (?profile) { profile };
+    };
+
+    let updatedSender : Profile = {
+      name = senderProfile.name;
+      phone = senderProfile.phone;
+      upiId = senderProfile.upiId;
+      walletBalance = senderProfile.walletBalance - amount;
+    };
+    profiles.add(caller, updatedSender);
+
+    let updatedRecipient : Profile = {
+      name = recipientProfile.name;
+      phone = recipientProfile.phone;
+      upiId = recipientProfile.upiId;
+      walletBalance = recipientProfile.walletBalance + amount;
+    };
+
+    switch (getPrincipalByUpiId(recipientProfile.upiId)) {
+      case (null) { Runtime.trap("Recipient principal not found") };
+      case (?recipientPrincipal) {
+        profiles.add(recipientPrincipal, updatedRecipient);
+
+        let transaction : Transaction = {
+          id = nextTransactionId;
+          fromUpiId = senderProfile.upiId;
+          toUpiId = recipientProfile.upiId;
+          amount;
+          type_ = #send;
+          note;
+          timestamp = Time.now();
+          status = #success;
+        };
+        transactions.add(nextTransactionId, transaction);
+
+        let receivedTransaction : Transaction = {
+          id = nextTransactionId + 1;
+          fromUpiId = senderProfile.upiId;
+          toUpiId = recipientProfile.upiId;
+          amount;
+          type_ = #receive;
+          note;
+          timestamp = Time.now();
+          status = #success;
+        };
+        transactions.add(nextTransactionId + 1, receivedTransaction);
+
+        nextTransactionId += 2;
+
+        addNotification(caller, "Sent " # amount.toText() # " to " # recipientProfile.name, #transactionAlert);
+        addNotification(recipientPrincipal, "Received " # amount.toText() # " from " # senderProfile.name, #transactionAlert);
       };
     };
   };
@@ -537,17 +715,30 @@ actor {
       Runtime.trap("Unauthorized: Only users can view transaction history");
     };
 
-    switch (profiles.get(caller)) {
-      case (null) { Runtime.trap("Profile not found") };
-      case (?profile) {
-        let userTransactions = transactions.values().toArray().filter(
-          func(tx : Transaction) : Bool {
-            tx.fromUpiId == profile.upiId or tx.toUpiId == profile.upiId
-          }
-        );
-        userTransactions;
+    var profile : Profile = switch (profiles.get(caller)) {
+      case (null) {
+        switch (principalToPhone.get(caller)) {
+          case (?phone) {
+            switch (getProfileByPhone(phone)) {
+              case (?p) {
+                profiles.add(caller, p);
+                p;
+              };
+              case (null) { Runtime.trap("Profile not found") };
+            };
+          };
+          case (null) { Runtime.trap("Profile not found") };
+        };
       };
+      case (?p) { p };
     };
+
+    let userTransactions = transactions.values().toArray().filter(
+      func(tx : Transaction) : Bool {
+        tx.fromUpiId == profile.upiId or tx.toUpiId == profile.upiId
+      }
+    );
+    userTransactions;
   };
 
   public query ({ caller }) func getRecentTransactions() : async [Transaction] {
@@ -555,24 +746,37 @@ actor {
       Runtime.trap("Unauthorized: Only users can view transactions");
     };
 
-    switch (profiles.get(caller)) {
-      case (null) { Runtime.trap("Profile not found") };
-      case (?profile) {
-        let userTransactions = transactions.values().toArray().filter(
-          func(tx : Transaction) : Bool {
-            tx.fromUpiId == profile.upiId or tx.toUpiId == profile.upiId
-          }
-        );
-
-        let sorted = userTransactions.sort(Transaction.compareByTimestamp);
-        let reversed = sorted.reverse();
-
-        if (reversed.size() <= 5) {
-          reversed;
-        } else {
-          Array.tabulate<Transaction>(5, func(i : Nat) : Transaction { reversed[i] });
+    var profile : Profile = switch (profiles.get(caller)) {
+      case (null) {
+        switch (principalToPhone.get(caller)) {
+          case (?phone) {
+            switch (getProfileByPhone(phone)) {
+              case (?p) {
+                profiles.add(caller, p);
+                p;
+              };
+              case (null) { Runtime.trap("Profile not found") };
+            };
+          };
+          case (null) { Runtime.trap("Profile not found") };
         };
       };
+      case (?p) { p };
+    };
+
+    let userTransactions = transactions.values().toArray().filter(
+      func(tx : Transaction) : Bool {
+        tx.fromUpiId == profile.upiId or tx.toUpiId == profile.upiId
+      }
+    );
+
+    let sorted = userTransactions.sort(Transaction.compareByTimestamp);
+    let reversed = sorted.reverse();
+
+    if (reversed.size() <= 5) {
+      reversed;
+    } else {
+      Array.tabulate<Transaction>(5, func(i : Nat) : Transaction { reversed[i] });
     };
   };
 
@@ -585,39 +789,52 @@ actor {
       Runtime.trap("Amount must be positive");
     };
 
-    switch (profiles.get(caller)) {
-      case (null) { Runtime.trap("Requester profile not found") };
-      case (?requesterProfile) {
-        let recipientProfileOpt = if (to.contains(#char '@')) {
-          getProfileByUpi(to);
-        } else {
-          getProfileByPhone(to);
-        };
-
-        let recipientProfile = switch (recipientProfileOpt) {
-          case (null) { Runtime.trap("Recipient not found") };
-          case (?profile) { profile };
-        };
-
-        let request : MoneyRequest = {
-          id = nextRequestId;
-          fromUpiId = requesterProfile.upiId;
-          toUpiId = recipientProfile.upiId;
-          amount;
-          note;
-          status = #pending;
-          timestamp = Time.now();
-        };
-
-        moneyRequests.add(nextRequestId, request);
-        nextRequestId += 1;
-
-        switch (getPrincipalByUpiId(recipientProfile.upiId)) {
-          case (null) { };
-          case (?recipientPrincipal) {
-            addNotification(recipientPrincipal, requesterProfile.name # " requested " # amount.toText(), #requestReceived);
+    var requesterProfile : Profile = switch (profiles.get(caller)) {
+      case (null) {
+        switch (principalToPhone.get(caller)) {
+          case (?phone) {
+            switch (getProfileByPhone(phone)) {
+              case (?p) {
+                profiles.add(caller, p);
+                p;
+              };
+              case (null) { Runtime.trap("Requester profile not found") };
+            };
           };
+          case (null) { Runtime.trap("Requester profile not found") };
         };
+      };
+      case (?p) { p };
+    };
+
+    let recipientProfileOpt = if (to.contains(#char '@')) {
+      getProfileByUpi(to);
+    } else {
+      getProfileByPhone(to);
+    };
+
+    let recipientProfile = switch (recipientProfileOpt) {
+      case (null) { Runtime.trap("Recipient not found") };
+      case (?profile) { profile };
+    };
+
+    let request : MoneyRequest = {
+      id = nextRequestId;
+      fromUpiId = requesterProfile.upiId;
+      toUpiId = recipientProfile.upiId;
+      amount;
+      note;
+      status = #pending;
+      timestamp = Time.now();
+    };
+
+    moneyRequests.add(nextRequestId, request);
+    nextRequestId += 1;
+
+    switch (getPrincipalByUpiId(recipientProfile.upiId)) {
+      case (null) { };
+      case (?recipientPrincipal) {
+        addNotification(recipientPrincipal, requesterProfile.name # " requested " # amount.toText(), #requestReceived);
       };
     };
   };
@@ -627,17 +844,30 @@ actor {
       Runtime.trap("Unauthorized: Only users can view money requests");
     };
 
-    switch (profiles.get(caller)) {
-      case (null) { Runtime.trap("Profile not found") };
-      case (?profile) {
-        let pendingRequests = moneyRequests.values().toArray().filter(
-          func(req : MoneyRequest) : Bool {
-            req.toUpiId == profile.upiId and req.status == #pending
-          }
-        );
-        pendingRequests;
+    var profile : Profile = switch (profiles.get(caller)) {
+      case (null) {
+        switch (principalToPhone.get(caller)) {
+          case (?phone) {
+            switch (getProfileByPhone(phone)) {
+              case (?p) {
+                profiles.add(caller, p);
+                p;
+              };
+              case (null) { Runtime.trap("Profile not found") };
+            };
+          };
+          case (null) { Runtime.trap("Profile not found") };
+        };
       };
+      case (?p) { p };
     };
+
+    let pendingRequests = moneyRequests.values().toArray().filter(
+      func(req : MoneyRequest) : Bool {
+        req.toUpiId == profile.upiId and req.status == #pending
+      }
+    );
+    pendingRequests;
   };
 
   public shared ({ caller }) func acceptRequest(requestId : Nat, confirmedByMpin : Bool) : async () {
@@ -656,83 +886,96 @@ actor {
           Runtime.trap("Request is not pending");
         };
 
-        switch (profiles.get(caller)) {
-          case (null) { Runtime.trap("Profile not found") };
-          case (?profile) {
-            if (request.toUpiId != profile.upiId) {
-              Runtime.trap("Unauthorized: Not authorized to accept this request");
-            };
-
-            if (profile.walletBalance < request.amount) {
-              Runtime.trap("Insufficient funds");
-            };
-
-            let updatedProfile : Profile = {
-              name = profile.name;
-              phone = profile.phone;
-              upiId = profile.upiId;
-              walletBalance = profile.walletBalance - request.amount;
-            };
-            profiles.add(caller, updatedProfile);
-
-            let requesterProfileOpt = getProfileByUpi(request.fromUpiId);
-            let requesterProfile = switch (requesterProfileOpt) {
-              case (null) { Runtime.trap("Requester profile not found") };
-              case (?prof) { prof };
-            };
-
-            let updatedRequester : Profile = {
-              name = requesterProfile.name;
-              phone = requesterProfile.phone;
-              upiId = requesterProfile.upiId;
-              walletBalance = requesterProfile.walletBalance + request.amount;
-            };
-
-            switch (getPrincipalByUpiId(requesterProfile.upiId)) {
-              case (null) { Runtime.trap("Requester principal not found") };
-              case (?requesterPrincipal) {
-                profiles.add(requesterPrincipal, updatedRequester);
-
-                let sendTransaction : Transaction = {
-                  id = nextTransactionId;
-                  fromUpiId = profile.upiId;
-                  toUpiId = request.fromUpiId;
-                  amount = request.amount;
-                  type_ = #send;
-                  note = ?"Accepted request";
-                  timestamp = Time.now();
-                  status = #success;
+        var profile : Profile = switch (profiles.get(caller)) {
+          case (null) {
+            switch (principalToPhone.get(caller)) {
+              case (?phone) {
+                switch (getProfileByPhone(phone)) {
+                  case (?p) {
+                    profiles.add(caller, p);
+                    p;
+                  };
+                  case (null) { Runtime.trap("Profile not found") };
                 };
-                transactions.add(nextTransactionId, sendTransaction);
-
-                let receiveTransaction : Transaction = {
-                  id = nextTransactionId + 1;
-                  fromUpiId = profile.upiId;
-                  toUpiId = request.fromUpiId;
-                  amount = request.amount;
-                  type_ = #receive;
-                  note = ?"Accepted request";
-                  timestamp = Time.now();
-                  status = #success;
-                };
-                transactions.add(nextTransactionId + 1, receiveTransaction);
-
-                let updatedRequest : MoneyRequest = {
-                  id = request.id;
-                  fromUpiId = request.fromUpiId;
-                  toUpiId = request.toUpiId;
-                  amount = request.amount;
-                  note = request.note;
-                  status = #accepted;
-                  timestamp = request.timestamp;
-                };
-                moneyRequests.add(requestId, updatedRequest);
-                nextTransactionId += 2;
-
-                addNotification(caller, "Request accepted for " # request.amount.toText(), #transactionAlert);
-                addNotification(requesterPrincipal, profile.name # " accepted your request", #requestAccepted);
               };
+              case (null) { Runtime.trap("Profile not found") };
             };
+          };
+          case (?p) { p };
+        };
+
+        if (request.toUpiId != profile.upiId) {
+          Runtime.trap("Unauthorized: Not authorized to accept this request");
+        };
+
+        if (profile.walletBalance < request.amount) {
+          Runtime.trap("Insufficient funds");
+        };
+
+        let updatedProfile : Profile = {
+          name = profile.name;
+          phone = profile.phone;
+          upiId = profile.upiId;
+          walletBalance = profile.walletBalance - request.amount;
+        };
+        profiles.add(caller, updatedProfile);
+
+        let requesterProfileOpt = getProfileByUpi(request.fromUpiId);
+        let requesterProfile = switch (requesterProfileOpt) {
+          case (null) { Runtime.trap("Requester profile not found") };
+          case (?prof) { prof };
+        };
+
+        let updatedRequester : Profile = {
+          name = requesterProfile.name;
+          phone = requesterProfile.phone;
+          upiId = requesterProfile.upiId;
+          walletBalance = requesterProfile.walletBalance + request.amount;
+        };
+
+        switch (getPrincipalByUpiId(requesterProfile.upiId)) {
+          case (null) { Runtime.trap("Requester principal not found") };
+          case (?requesterPrincipal) {
+            profiles.add(requesterPrincipal, updatedRequester);
+
+            let sendTransaction : Transaction = {
+              id = nextTransactionId;
+              fromUpiId = profile.upiId;
+              toUpiId = request.fromUpiId;
+              amount = request.amount;
+              type_ = #send;
+              note = ?"Accepted request";
+              timestamp = Time.now();
+              status = #success;
+            };
+            transactions.add(nextTransactionId, sendTransaction);
+
+            let receiveTransaction : Transaction = {
+              id = nextTransactionId + 1;
+              fromUpiId = profile.upiId;
+              toUpiId = request.fromUpiId;
+              amount = request.amount;
+              type_ = #receive;
+              note = ?"Accepted request";
+              timestamp = Time.now();
+              status = #success;
+            };
+            transactions.add(nextTransactionId + 1, receiveTransaction);
+
+            let updatedRequest : MoneyRequest = {
+              id = request.id;
+              fromUpiId = request.fromUpiId;
+              toUpiId = request.toUpiId;
+              amount = request.amount;
+              note = request.note;
+              status = #accepted;
+              timestamp = request.timestamp;
+            };
+            moneyRequests.add(requestId, updatedRequest);
+            nextTransactionId += 2;
+
+            addNotification(caller, "Request accepted for " # request.amount.toText(), #transactionAlert);
+            addNotification(requesterPrincipal, profile.name # " accepted your request", #requestAccepted);
           };
         };
       };
@@ -751,25 +994,38 @@ actor {
           Runtime.trap("Request is not pending");
         };
 
-        switch (profiles.get(caller)) {
-          case (null) { Runtime.trap("Profile not found") };
-          case (?profile) {
-            if (request.toUpiId != profile.upiId) {
-              Runtime.trap("Unauthorized: Not authorized to decline this request");
+        var profile : Profile = switch (profiles.get(caller)) {
+          case (null) {
+            switch (principalToPhone.get(caller)) {
+              case (?phone) {
+                switch (getProfileByPhone(phone)) {
+                  case (?p) {
+                    profiles.add(caller, p);
+                    p;
+                  };
+                  case (null) { Runtime.trap("Profile not found") };
+                };
+              };
+              case (null) { Runtime.trap("Profile not found") };
             };
-
-            let updatedRequest : MoneyRequest = {
-              id = request.id;
-              fromUpiId = request.fromUpiId;
-              toUpiId = request.toUpiId;
-              amount = request.amount;
-              note = request.note;
-              status = #declined;
-              timestamp = request.timestamp;
-            };
-            moneyRequests.add(requestId, updatedRequest);
           };
+          case (?p) { p };
         };
+
+        if (request.toUpiId != profile.upiId) {
+          Runtime.trap("Unauthorized: Not authorized to decline this request");
+        };
+
+        let updatedRequest : MoneyRequest = {
+          id = request.id;
+          fromUpiId = request.fromUpiId;
+          toUpiId = request.toUpiId;
+          amount = request.amount;
+          note = request.note;
+          status = #declined;
+          timestamp = request.timestamp;
+        };
+        moneyRequests.add(requestId, updatedRequest);
       };
     };
   };
@@ -783,42 +1039,73 @@ actor {
       Runtime.trap("Amount must be positive");
     };
 
-    switch (profiles.get(caller)) {
-      case (null) { Runtime.trap("Profile not found") };
-      case (?profile) {
-        if (profile.walletBalance < billPayment.amount) {
-          Runtime.trap("Insufficient funds");
+    var profile : Profile = switch (profiles.get(caller)) {
+      case (null) {
+        switch (principalToPhone.get(caller)) {
+          case (?phone) {
+            switch (getProfileByPhone(phone)) {
+              case (?p) {
+                profiles.add(caller, p);
+                p;
+              };
+              case (null) { Runtime.trap("Profile not found") };
+            };
+          };
+          case (null) { Runtime.trap("Profile not found") };
         };
-
-        let updatedProfile : Profile = {
-          name = profile.name;
-          phone = profile.phone;
-          upiId = profile.upiId;
-          walletBalance = profile.walletBalance - billPayment.amount;
-        };
-        profiles.add(caller, updatedProfile);
-
-        let transaction : Transaction = {
-          id = nextTransactionId;
-          fromUpiId = profile.upiId;
-          toUpiId = billPayment.provider;
-          amount = billPayment.amount;
-          type_ = #billPayment;
-          note = ?("Bill payment: " # billPayment.billNumber);
-          timestamp = Time.now();
-          status = #success;
-        };
-        transactions.add(nextTransactionId, transaction);
-        nextTransactionId += 1;
-
-        addNotification(caller, "Bill paid: " # billPayment.amount.toText(), #transactionAlert);
       };
+      case (?p) { p };
     };
+
+    if (profile.walletBalance < billPayment.amount) {
+      Runtime.trap("Insufficient funds");
+    };
+
+    let updatedProfile : Profile = {
+      name = profile.name;
+      phone = profile.phone;
+      upiId = profile.upiId;
+      walletBalance = profile.walletBalance - billPayment.amount;
+    };
+    profiles.add(caller, updatedProfile);
+
+    let transaction : Transaction = {
+      id = nextTransactionId;
+      fromUpiId = profile.upiId;
+      toUpiId = billPayment.provider;
+      amount = billPayment.amount;
+      type_ = #billPayment;
+      note = ?("Bill payment: " # billPayment.billNumber);
+      timestamp = Time.now();
+      status = #success;
+    };
+    transactions.add(nextTransactionId, transaction);
+    nextTransactionId += 1;
+
+    addNotification(caller, "Bill paid: " # billPayment.amount.toText(), #transactionAlert);
   };
 
   public query ({ caller }) func getNotifications() : async [Notification] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can view notifications");
+    };
+
+    // Ensure profile is migrated before accessing notifications
+    switch (profiles.get(caller)) {
+      case (null) {
+        switch (principalToPhone.get(caller)) {
+          case (?phone) {
+            switch (getProfileByPhone(phone)) {
+              case (?p) {
+                profiles.add(caller, p);
+              };
+              case (null) { Runtime.trap("Profile not found") };
+            };
+          };
+          case (null) { Runtime.trap("Profile not found") };
+        };
+      };
+      case (?p) {};
     };
 
     switch (notifications.get(caller)) {
@@ -830,6 +1117,24 @@ actor {
   public shared ({ caller }) func markNotificationAsRead(notificationId : Nat) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can mark notifications as read");
+    };
+
+    // Ensure profile is migrated
+    switch (profiles.get(caller)) {
+      case (null) {
+        switch (principalToPhone.get(caller)) {
+          case (?phone) {
+            switch (getProfileByPhone(phone)) {
+              case (?p) {
+                profiles.add(caller, p);
+              };
+              case (null) { Runtime.trap("Profile not found") };
+            };
+          };
+          case (null) { Runtime.trap("Profile not found") };
+        };
+      };
+      case (?p) {};
     };
 
     switch (notifications.get(caller)) {
@@ -858,6 +1163,24 @@ actor {
   public query ({ caller }) func getUnreadNotificationCount() : async Nat {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can view notification count");
+    };
+
+    // Ensure profile is migrated
+    switch (profiles.get(caller)) {
+      case (null) {
+        switch (principalToPhone.get(caller)) {
+          case (?phone) {
+            switch (getProfileByPhone(phone)) {
+              case (?p) {
+                profiles.add(caller, p);
+              };
+              case (null) { Runtime.trap("Profile not found") };
+            };
+          };
+          case (null) { Runtime.trap("Profile not found") };
+        };
+      };
+      case (?p) {};
     };
 
     switch (notifications.get(caller)) {

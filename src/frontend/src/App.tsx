@@ -1,8 +1,13 @@
 import { Toaster } from "@/components/ui/sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { useInternetIdentity } from "./hooks/useInternetIdentity";
-import { useGetCallerProfile, useHasAccount } from "./hooks/useQueries";
+import {
+  SWIFTPAY_LOGGED_IN_KEY,
+  useGetCallerProfile,
+  useHasAccount,
+} from "./hooks/useQueries";
 
 import AddMoneyScreen from "./screens/AddMoneyScreen";
 import AdminPanelScreen from "./screens/AdminPanelScreen";
@@ -36,10 +41,37 @@ export type Screen =
 
 export type NavTab = "home" | "history" | "scan" | "requests" | "profile";
 
+// Shared loading spinner UI
+function LoadingSpinner({ message }: { message?: string }) {
+  return (
+    <div className="phone-container flex items-center justify-center min-h-screen">
+      <div className="flex flex-col items-center gap-4">
+        <div className="w-16 h-16 rounded-2xl gradient-purple flex items-center justify-center shadow-purple">
+          <img
+            src="/assets/generated/swiftpay-logo.dim_120x120.png"
+            alt="SwiftPay"
+            className="w-12 h-12 rounded-xl"
+          />
+        </div>
+        {message ? (
+          <p className="text-sm text-muted-foreground font-medium animate-pulse">
+            {message}
+          </p>
+        ) : (
+          <div className="flex gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-primary animate-bounce [animation-delay:0ms]" />
+            <span className="w-2 h-2 rounded-full bg-primary animate-bounce [animation-delay:150ms]" />
+            <span className="w-2 h-2 rounded-full bg-primary animate-bounce [animation-delay:300ms]" />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function AppContent() {
-  const { identity, clear, isInitializing } = useInternetIdentity();
+  const { isInitializing } = useInternetIdentity();
   const queryClient = useQueryClient();
-  const isAuthenticated = !!identity;
 
   const {
     data: profile,
@@ -60,14 +92,16 @@ function AppContent() {
   const [loadingTimedOut, setLoadingTimedOut] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Track whether we've already shown the session-expired toast
+  const sessionExpiredToastShown = useRef(false);
+
   useEffect(() => {
-    // Only start the timer when authenticated and profile hasn't loaded yet
-    if (isAuthenticated && profileLoading && !profileFetched) {
+    // Only start the timer when we have an account and profile hasn't loaded yet
+    if (hasAccount && profileLoading && !profileFetched) {
       timeoutRef.current = setTimeout(() => {
         setLoadingTimedOut(true);
       }, 8000);
     } else {
-      // Profile loaded or not authenticated — clear the timer and reset flag
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
         timeoutRef.current = null;
@@ -80,17 +114,20 @@ function AppContent() {
         timeoutRef.current = null;
       }
     };
-  }, [isAuthenticated, profileLoading, profileFetched]);
+  }, [hasAccount, profileLoading, profileFetched]);
 
-  // Force a fresh fetch when authentication state changes to true
-  const prevAuthRef = useRef(false);
+  // Show session-expired toast when user had a previous session but hasAccount now returns false
   useEffect(() => {
-    if (isAuthenticated && !prevAuthRef.current) {
-      queryClient.invalidateQueries({ queryKey: ["callerProfile"] });
-      queryClient.invalidateQueries({ queryKey: ["hasAccount"] });
+    if (
+      hasAccountFetched &&
+      hasAccount === false &&
+      localStorage.getItem(SWIFTPAY_LOGGED_IN_KEY) === "true" &&
+      !sessionExpiredToastShown.current
+    ) {
+      sessionExpiredToastShown.current = true;
+      toast.info("Session expired. Please log in again.");
     }
-    prevAuthRef.current = isAuthenticated;
-  }, [isAuthenticated, queryClient]);
+  }, [hasAccountFetched, hasAccount]);
 
   const navigate = useCallback((screen: Screen) => {
     setCurrentScreen(screen);
@@ -107,83 +144,29 @@ function AppContent() {
     setCurrentScreen(tab as Screen);
   }, []);
 
-  const handleLogout = useCallback(async () => {
-    await clear();
+  const handleLogout = useCallback(() => {
+    localStorage.removeItem(SWIFTPAY_LOGGED_IN_KEY);
+    sessionExpiredToastShown.current = false;
     queryClient.clear();
     setCurrentScreen("home");
     setActiveNavTab("home");
-  }, [clear, queryClient]);
+  }, [queryClient]);
 
-  // Show loading state while II is initializing
-  if (isInitializing) {
-    return (
-      <div className="phone-container flex items-center justify-center min-h-screen">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-16 h-16 rounded-2xl gradient-purple flex items-center justify-center shadow-purple">
-            <img
-              src="/assets/generated/swiftpay-logo.dim_120x120.png"
-              alt="SwiftPay"
-              className="w-12 h-12 rounded-xl"
-            />
-          </div>
-          <div className="flex gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-primary animate-bounce [animation-delay:0ms]" />
-            <span className="w-2 h-2 rounded-full bg-primary animate-bounce [animation-delay:150ms]" />
-            <span className="w-2 h-2 rounded-full bg-primary animate-bounce [animation-delay:300ms]" />
-          </div>
-        </div>
-      </div>
-    );
+  // ── Routing ────────────────────────────────────────────────────────────────
+
+  // 1. While II is initializing OR while checking if user has account
+  if (isInitializing || (!hasAccountFetched && hasAccountLoading)) {
+    return <LoadingSpinner />;
   }
 
-  // Not authenticated — show login/signup screen
-  if (!isAuthenticated) {
+  // 2. No account → show login/signup
+  if (hasAccountFetched && !hasAccount) {
     return <LoginScreen />;
   }
 
-  // Authenticated but still checking if account exists
-  if (hasAccountLoading && !hasAccountFetched) {
-    return (
-      <div className="phone-container flex items-center justify-center min-h-screen">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-16 h-16 rounded-2xl gradient-purple flex items-center justify-center shadow-purple">
-            <img
-              src="/assets/generated/swiftpay-logo.dim_120x120.png"
-              alt="SwiftPay"
-              className="w-12 h-12 rounded-xl"
-            />
-          </div>
-          <p className="text-sm text-muted-foreground font-medium animate-pulse">
-            Loading your account...
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  // Authenticated but no account yet — show login/signup screen (they need to create or link)
-  if (hasAccountFetched && hasAccount === false) {
-    return <LoginScreen />;
-  }
-
-  // Authenticated and has account but profile still loading
-  if (profileLoading && !profileFetched && !loadingTimedOut) {
-    return (
-      <div className="phone-container flex items-center justify-center min-h-screen">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-16 h-16 rounded-2xl gradient-purple flex items-center justify-center shadow-purple">
-            <img
-              src="/assets/generated/swiftpay-logo.dim_120x120.png"
-              alt="SwiftPay"
-              className="w-12 h-12 rounded-xl"
-            />
-          </div>
-          <p className="text-sm text-muted-foreground font-medium animate-pulse">
-            Loading your account...
-          </p>
-        </div>
-      </div>
-    );
+  // 3. Has account but profile still loading (with 8s timeout fallback)
+  if (hasAccount && profileLoading && !profileFetched && !loadingTimedOut) {
+    return <LoadingSpinner message="Loading your account..." />;
   }
 
   // Main app
