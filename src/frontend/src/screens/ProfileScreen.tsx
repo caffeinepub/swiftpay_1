@@ -50,11 +50,11 @@ export default function ProfileScreen({
 
   useEffect(() => {
     if (!showQR || !profile?.upiId) return;
-    // Use QR Server API to generate QR code image
-    const upiId = encodeURIComponent(profile.upiId);
-    const url = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${upiId}&bgcolor=ffffff&color=1a0540&margin=2&format=png`;
+    // Encode a UPI deep-link so any UPI-compatible scanner (including Scan & Pay) can parse it
+    const deepLink = `upi://pay?pa=${profile.upiId}&pn=${encodeURIComponent(profile.name)}&cu=INR`;
+    const url = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(deepLink)}&bgcolor=ffffff&color=1a0540&margin=2&format=png`;
     setQrDataUrl(url);
-  }, [showQR, profile?.upiId]);
+  }, [showQR, profile?.upiId, profile?.name]);
 
   const { data: transactions } = useGetTransactionHistory();
   const { data: balance } = useGetWalletBalance();

@@ -12,6 +12,7 @@ interface MpinModalProps {
   open: boolean;
   onClose: () => void;
   onConfirm: (mpin: string) => void;
+  onVerify?: (mpinHash: string) => Promise<boolean>;
   isLoading?: boolean;
   title?: string;
   subtitle?: string;
@@ -21,29 +22,66 @@ export default function MpinModal({
   open,
   onClose,
   onConfirm,
+  onVerify,
   isLoading = false,
   title = "Enter MPIN",
   subtitle = "Enter your 4-digit security PIN",
 }: MpinModalProps) {
   const [pin, setPin] = useState("");
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [hasError, setHasError] = useState(false);
+  const [shake, setShake] = useState(false);
 
   // Reset PIN every time the modal opens
   useEffect(() => {
-    if (open) setPin("");
+    if (open) {
+      setPin("");
+      setHasError(false);
+      setShake(false);
+    }
   }, [open]);
 
   const handleDigit = (d: string) => {
-    if (pin.length < 4) {
+    if (pin.length < 4 && !isVerifying) {
       setPin((p) => p + d);
+      if (hasError) setHasError(false);
     }
   };
 
   const handleDelete = () => {
-    setPin((p) => p.slice(0, -1));
+    if (!isVerifying) {
+      setPin((p) => p.slice(0, -1));
+      if (hasError) setHasError(false);
+    }
   };
 
-  const handleConfirm = () => {
-    if (pin.length === 4) {
+  const handleConfirm = async () => {
+    if (pin.length !== 4 || isVerifying) return;
+
+    if (onVerify) {
+      setIsVerifying(true);
+      try {
+        const { sha256Hex } = await import("../utils/hash");
+        const mpinHash = await sha256Hex(pin);
+        const valid = await onVerify(mpinHash);
+        if (!valid) {
+          setHasError(true);
+          setShake(true);
+          setTimeout(() => setShake(false), 600);
+          setPin("");
+          return;
+        }
+        onConfirm(pin);
+        setPin("");
+      } catch {
+        setHasError(true);
+        setShake(true);
+        setTimeout(() => setShake(false), 600);
+        setPin("");
+      } finally {
+        setIsVerifying(false);
+      }
+    } else {
       onConfirm(pin);
       setPin("");
     }
@@ -51,8 +89,11 @@ export default function MpinModal({
 
   const handleClose = () => {
     setPin("");
+    setHasError(false);
     onClose();
   };
+
+  const busy = isLoading || isVerifying;
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
@@ -78,19 +119,33 @@ export default function MpinModal({
           {/* PIN Dots */}
           <div
             data-ocid="mpin.input"
-            className="flex justify-center gap-4 mb-6"
+            className={`flex justify-center gap-4 mb-2 transition-transform ${shake ? "animate-[shake_0.5s_ease-in-out]" : ""}`}
           >
             {[0, 1, 2, 3].map((i) => (
               <div
                 key={i}
                 className={`w-4 h-4 rounded-full transition-all duration-150 ${
-                  i < pin.length
-                    ? "bg-primary scale-110"
-                    : "bg-muted border-2 border-border"
+                  hasError
+                    ? "bg-destructive scale-110"
+                    : i < pin.length
+                      ? "bg-primary scale-110"
+                      : "bg-muted border-2 border-border"
                 }`}
               />
             ))}
           </div>
+
+          {/* Error message */}
+          {hasError && (
+            <p
+              data-ocid="mpin.verify_error"
+              className="text-center text-xs font-semibold mb-4"
+              style={{ color: "oklch(0.55 0.22 27)" }}
+            >
+              Incorrect MPIN. Please try again.
+            </p>
+          )}
+          {!hasError && <div className="mb-4" />}
 
           {/* Number Pad */}
           <div className="grid grid-cols-3 gap-3 mb-4">
@@ -99,7 +154,7 @@ export default function MpinModal({
                 type="button"
                 key={d}
                 onClick={() => handleDigit(d)}
-                disabled={isLoading}
+                disabled={busy}
                 className="numpad-btn mx-auto disabled:opacity-50"
               >
                 {d}
@@ -110,7 +165,7 @@ export default function MpinModal({
             <button
               type="button"
               onClick={() => handleDigit("0")}
-              disabled={isLoading}
+              disabled={busy}
               className="numpad-btn mx-auto disabled:opacity-50"
             >
               0
@@ -118,7 +173,7 @@ export default function MpinModal({
             <button
               type="button"
               onClick={handleDelete}
-              disabled={isLoading || pin.length === 0}
+              disabled={busy || pin.length === 0}
               className="numpad-btn mx-auto disabled:opacity-50"
             >
               <Delete className="w-5 h-5" />
@@ -131,18 +186,18 @@ export default function MpinModal({
               data-ocid="mpin.cancel_button"
               variant="outline"
               onClick={handleClose}
-              disabled={isLoading}
+              disabled={busy}
               className="flex-1 h-12 rounded-xl font-bold"
             >
               Cancel
             </Button>
             <Button
               data-ocid="mpin.confirm_button"
-              onClick={handleConfirm}
-              disabled={pin.length < 4 || isLoading}
+              onClick={() => void handleConfirm()}
+              disabled={pin.length < 4 || busy}
               className="flex-1 h-12 rounded-xl font-bold gradient-purple text-white border-0 shadow-purple"
             >
-              {isLoading ? (
+              {busy ? (
                 <span className="flex items-center gap-2">
                   <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                   Verifying...

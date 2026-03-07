@@ -91,6 +91,8 @@ export interface backendInterface {
     adminAdjustUserBalance(userPrincipal: Principal, newBalance: number): Promise<void>;
     adminAssignUserRole(targetUser: Principal, role: UserRole): Promise<void>;
     assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
+    changeMpin(oldMpinHash: string, newMpinHash: string): Promise<void>;
+    changePassword(oldPasswordHash: string, newPasswordHash: string): Promise<void>;
     createOrUpdateProfile(name: string, phone: string): Promise<void>;
     declineRequest(requestId: bigint): Promise<void>;
     getAllTransactions(): Promise<Array<Transaction>>;
@@ -108,7 +110,13 @@ export interface backendInterface {
     getWalletBalance(): Promise<number>;
     getWalletBalanceByPhone(phone: string): Promise<number>;
     getWalletBalanceByUpiId(upiId: string): Promise<number>;
+    hasAccount(): Promise<boolean>;
     isCallerAdmin(): Promise<boolean>;
+    login(phone: string, passwordHash: string): Promise<Profile | null>;
+    lookupProfileByPhone(phone: string): Promise<{
+        name: string;
+        upiId: string;
+    } | null>;
     lookupProfileByUpiId(upiId: string): Promise<{
         name: string;
         upiId: string;
@@ -118,5 +126,7 @@ export interface backendInterface {
     requestMoney(to: string, amount: number, note: string | null): Promise<void>;
     saveCallerUserProfile(name: string, phone: string): Promise<void>;
     sendMoney(to: string, amount: number, note: string | null, confirmedByMpin: boolean): Promise<void>;
+    signup(name: string, phone: string, passwordHash: string, mpinHash: string): Promise<void>;
     topUpWallet(amount: number): Promise<void>;
+    verifyMpin(mpinHash: string): Promise<boolean>;
 }

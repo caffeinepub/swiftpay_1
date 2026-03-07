@@ -13,8 +13,6 @@ import Principal "mo:core/Principal";
 import AccessControl "authorization/access-control";
 import MixinAuthorization "authorization/MixinAuthorization";
 
-
-
 actor {
   // Types
   public type Profile = {
@@ -116,11 +114,20 @@ actor {
     totalWalletBalance : Float;
   };
 
+  public type Account = {
+    phone : Text;
+    passwordHash : Text;
+    mpinHash : Text;
+    principalId : Principal;
+  };
+
   // State
   let profiles = Map.empty<Principal, Profile>();
   let transactions = Map.empty<Nat, Transaction>();
   let notifications = Map.empty<Principal, [Notification]>();
   let moneyRequests = Map.empty<Nat, MoneyRequest>();
+  let accounts = Map.empty<Text, Account>();
+  let principalToPhone = Map.empty<Principal, Text>();
 
   // ID Counters
   var nextTransactionId = 1;
@@ -171,7 +178,111 @@ actor {
     notifications.add(principal, updatedNotifications);
   };
 
-  // Required Profile Functions
+  // Account Management Functions
+  public shared ({ caller }) func signup(name : Text, phone : Text, passwordHash : Text, mpinHash : Text) : async () {
+    if (accounts.containsKey(phone)) {
+      Runtime.trap("Phone number already registered");
+    };
+
+    let upiId = phone # "@swiftpay";
+    let profile : Profile = {
+      name;
+      phone;
+      upiId;
+      walletBalance = 1000.0;
+    };
+
+    let account : Account = {
+      phone;
+      passwordHash;
+      mpinHash;
+      principalId = caller;
+    };
+
+    accounts.add(phone, account);
+    profiles.add(caller, profile);
+    principalToPhone.add(caller, phone);
+    accessControlState.userRoles.add(caller, #user);
+  };
+
+  public shared ({ caller }) func login(phone : Text, passwordHash : Text) : async ?Profile {
+    switch (accounts.get(phone)) {
+      case (null) { null };
+      case (?account) {
+        if (account.passwordHash != passwordHash) { return null };
+
+        principalToPhone.add(caller, phone);
+        if (not AccessControl.hasPermission(accessControlState, caller, #user)) {
+          accessControlState.userRoles.add(caller, #user);
+        };
+        getProfileByPhone(phone);
+      };
+    };
+  };
+
+  public shared ({ caller }) func verifyMpin(mpinHash : Text) : async Bool {
+    switch (principalToPhone.get(caller)) {
+      case (null) { false };
+      case (?phone) {
+        switch (accounts.get(phone)) {
+          case (null) { false };
+          case (?account) { account.mpinHash == mpinHash };
+        };
+      };
+    };
+  };
+
+  public query ({ caller }) func hasAccount() : async Bool {
+    principalToPhone.containsKey(caller);
+  };
+
+  public shared ({ caller }) func changePassword(oldPasswordHash : Text, newPasswordHash : Text) : async () {
+    switch (principalToPhone.get(caller)) {
+      case (null) { Runtime.trap("Account not found") };
+      case (?phone) {
+        switch (accounts.get(phone)) {
+          case (null) { Runtime.trap("Account not found") };
+          case (?account) {
+            if (account.passwordHash != oldPasswordHash) {
+              Runtime.trap("Incorrect old password");
+            };
+            let updatedAccount : Account = {
+              phone = account.phone;
+              passwordHash = newPasswordHash;
+              mpinHash = account.mpinHash;
+              principalId = account.principalId;
+            };
+            accounts.add(phone, updatedAccount);
+          };
+        };
+      };
+    };
+  };
+
+  public shared ({ caller }) func changeMpin(oldMpinHash : Text, newMpinHash : Text) : async () {
+    switch (principalToPhone.get(caller)) {
+      case (null) { Runtime.trap("Account not found") };
+      case (?phone) {
+        switch (accounts.get(phone)) {
+          case (null) { Runtime.trap("Account not found") };
+          case (?account) {
+            if (account.mpinHash != oldMpinHash) {
+              Runtime.trap("Incorrect old MPIN");
+            };
+            let updatedAccount : Account = {
+              phone = account.phone;
+              passwordHash = account.passwordHash;
+              mpinHash = newMpinHash;
+              principalId = account.principalId;
+            };
+            accounts.add(phone, updatedAccount);
+          };
+        };
+      };
+    };
+  };
+
+  // Profile Functions
   public query ({ caller }) func getCallerUserProfile() : async ?Profile {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can view profiles");
@@ -186,8 +297,7 @@ actor {
     profiles.get(user);
   };
 
-  // __NEW__
-  // Lookup profile by UPI ID WITHOUT authentication restriction (publicly accessible)
+  // Lookup profile by UPI ID without authentication
   public query ({ caller }) func lookupProfileByUpiId(upiId : Text) : async ?{ name : Text; upiId : Text } {
     switch (getProfileByUpi(upiId)) {
       case (null) { null };
@@ -222,7 +332,19 @@ actor {
     profiles.add(caller, profile);
   };
 
-  // Core Functions
+  // Public phone lookup function
+  public query ({ caller }) func lookupProfileByPhone(phone : Text) : async ?{ name : Text; upiId : Text } {
+    switch (getProfileByPhone(phone)) {
+      case (null) { null };
+      case (?profile) {
+        ?{
+          name = profile.name;
+          upiId = profile.upiId;
+        };
+      };
+    };
+  };
+
   public shared ({ caller }) func createOrUpdateProfile(name : Text, phone : Text) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can create or update profiles");
@@ -746,8 +868,7 @@ actor {
     };
   };
 
-  // ADMIN PANEL FUNCTIONS
-
+  // Admin Panel Functions
   public query ({ caller }) func getAllUsers() : async [(Principal, Profile)] {
     if (not (AccessControl.isAdmin(accessControlState, caller))) {
       Runtime.trap("Unauthorized: Only admins can view all users");

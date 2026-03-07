@@ -174,6 +174,8 @@ export interface backendInterface {
     adminAdjustUserBalance(userPrincipal: Principal, newBalance: number): Promise<void>;
     adminAssignUserRole(targetUser: Principal, role: UserRole): Promise<void>;
     assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
+    changeMpin(oldMpinHash: string, newMpinHash: string): Promise<void>;
+    changePassword(oldPasswordHash: string, newPasswordHash: string): Promise<void>;
     createOrUpdateProfile(name: string, phone: string): Promise<void>;
     declineRequest(requestId: bigint): Promise<void>;
     getAllTransactions(): Promise<Array<Transaction>>;
@@ -191,7 +193,13 @@ export interface backendInterface {
     getWalletBalance(): Promise<number>;
     getWalletBalanceByPhone(phone: string): Promise<number>;
     getWalletBalanceByUpiId(upiId: string): Promise<number>;
+    hasAccount(): Promise<boolean>;
     isCallerAdmin(): Promise<boolean>;
+    login(phone: string, passwordHash: string): Promise<Profile | null>;
+    lookupProfileByPhone(phone: string): Promise<{
+        name: string;
+        upiId: string;
+    } | null>;
     lookupProfileByUpiId(upiId: string): Promise<{
         name: string;
         upiId: string;
@@ -201,7 +209,9 @@ export interface backendInterface {
     requestMoney(to: string, amount: number, note: string | null): Promise<void>;
     saveCallerUserProfile(name: string, phone: string): Promise<void>;
     sendMoney(to: string, amount: number, note: string | null, confirmedByMpin: boolean): Promise<void>;
+    signup(name: string, phone: string, passwordHash: string, mpinHash: string): Promise<void>;
     topUpWallet(amount: number): Promise<void>;
+    verifyMpin(mpinHash: string): Promise<boolean>;
 }
 import type { BillCategory as _BillCategory, BillPayment as _BillPayment, MoneyRequest as _MoneyRequest, Notification as _Notification, NotificationType as _NotificationType, Profile as _Profile, RequestStatus as _RequestStatus, Time as _Time, Transaction as _Transaction, TransactionStatus as _TransactionStatus, TransactionType as _TransactionType, UserRole as _UserRole } from "./declarations/backend.did.d.ts";
 export class Backend implements backendInterface {
@@ -273,6 +283,34 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.assignCallerUserRole(arg0, to_candid_UserRole_n1(this._uploadFile, this._downloadFile, arg1));
+            return result;
+        }
+    }
+    async changeMpin(arg0: string, arg1: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.changeMpin(arg0, arg1);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.changeMpin(arg0, arg1);
+            return result;
+        }
+    }
+    async changePassword(arg0: string, arg1: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.changePassword(arg0, arg1);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.changePassword(arg0, arg1);
             return result;
         }
     }
@@ -514,6 +552,20 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async hasAccount(): Promise<boolean> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.hasAccount();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.hasAccount();
+            return result;
+        }
+    }
     async isCallerAdmin(): Promise<boolean> {
         if (this.processError) {
             try {
@@ -526,6 +578,37 @@ export class Backend implements backendInterface {
         } else {
             const result = await this.actor.isCallerAdmin();
             return result;
+        }
+    }
+    async login(arg0: string, arg1: string): Promise<Profile | null> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.login(arg0, arg1);
+                return from_candid_opt_n11(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.login(arg0, arg1);
+            return from_candid_opt_n11(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async lookupProfileByPhone(arg0: string): Promise<{
+        name: string;
+        upiId: string;
+    } | null> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.lookupProfileByPhone(arg0);
+                return from_candid_opt_n24(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.lookupProfileByPhone(arg0);
+            return from_candid_opt_n24(this._uploadFile, this._downloadFile, result);
         }
     }
     async lookupProfileByUpiId(arg0: string): Promise<{
@@ -615,6 +698,20 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async signup(arg0: string, arg1: string, arg2: string, arg3: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.signup(arg0, arg1, arg2, arg3);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.signup(arg0, arg1, arg2, arg3);
+            return result;
+        }
+    }
     async topUpWallet(arg0: number): Promise<void> {
         if (this.processError) {
             try {
@@ -626,6 +723,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.topUpWallet(arg0);
+            return result;
+        }
+    }
+    async verifyMpin(arg0: string): Promise<boolean> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.verifyMpin(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.verifyMpin(arg0);
             return result;
         }
     }

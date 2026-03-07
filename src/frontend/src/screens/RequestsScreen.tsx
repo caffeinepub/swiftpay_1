@@ -17,6 +17,7 @@ import {
   useAcceptRequest,
   useDeclineRequest,
   useGetPendingMoneyRequests,
+  useVerifyMpin,
 } from "../hooks/useQueries";
 import { formatAmount, formatTimestamp } from "../utils/format";
 
@@ -34,6 +35,7 @@ export default function RequestsScreen({ navigate }: RequestsScreenProps) {
   const { data: requests, isLoading } = useGetPendingMoneyRequests();
   const { mutateAsync: acceptRequest } = useAcceptRequest();
   const { mutateAsync: declineRequest } = useDeclineRequest();
+  const { mutateAsync: verifyMpinMutation } = useVerifyMpin();
 
   const handleAcceptClick = (requestId: bigint) => {
     setPendingAcceptId(requestId);
@@ -250,6 +252,9 @@ export default function RequestsScreen({ navigate }: RequestsScreenProps) {
           setPendingAcceptId(null);
         }}
         onConfirm={handleMpinConfirm}
+        onVerify={async (mpinHash) => {
+          return await verifyMpinMutation(mpinHash);
+        }}
         isLoading={acceptingId !== null}
         title="Confirm Payment"
         subtitle={

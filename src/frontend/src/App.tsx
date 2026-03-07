@@ -1,11 +1,8 @@
 import { Toaster } from "@/components/ui/sonner";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useInternetIdentity } from "./hooks/useInternetIdentity";
-import {
-  useCreateOrUpdateProfile,
-  useGetCallerProfile,
-} from "./hooks/useQueries";
+import { useGetCallerProfile, useHasAccount } from "./hooks/useQueries";
 
 import AddMoneyScreen from "./screens/AddMoneyScreen";
 import AdminPanelScreen from "./screens/AdminPanelScreen";
@@ -19,7 +16,6 @@ import RequestMoneyScreen from "./screens/RequestMoneyScreen";
 import RequestsScreen from "./screens/RequestsScreen";
 import ScanPayScreen from "./screens/ScanPayScreen";
 import SendMoneyScreen from "./screens/SendMoneyScreen";
-import SetupScreen from "./screens/SetupScreen";
 import TransactionHistoryScreen from "./screens/TransactionHistoryScreen";
 
 // Navigation
@@ -51,10 +47,50 @@ function AppContent() {
     isFetched: profileFetched,
   } = useGetCallerProfile();
 
-  const { mutateAsync: createProfile } = useCreateOrUpdateProfile();
+  const {
+    data: hasAccount,
+    isLoading: hasAccountLoading,
+    isFetched: hasAccountFetched,
+  } = useHasAccount();
 
   const [currentScreen, setCurrentScreen] = useState<Screen>("home");
   const [activeNavTab, setActiveNavTab] = useState<NavTab>("home");
+
+  // Timeout fallback: if stuck on "Loading your account..." for > 8s, bail out
+  const [loadingTimedOut, setLoadingTimedOut] = useState(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    // Only start the timer when authenticated and profile hasn't loaded yet
+    if (isAuthenticated && profileLoading && !profileFetched) {
+      timeoutRef.current = setTimeout(() => {
+        setLoadingTimedOut(true);
+      }, 8000);
+    } else {
+      // Profile loaded or not authenticated — clear the timer and reset flag
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+      setLoadingTimedOut(false);
+    }
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+    };
+  }, [isAuthenticated, profileLoading, profileFetched]);
+
+  // Force a fresh fetch when authentication state changes to true
+  const prevAuthRef = useRef(false);
+  useEffect(() => {
+    if (isAuthenticated && !prevAuthRef.current) {
+      queryClient.invalidateQueries({ queryKey: ["callerProfile"] });
+      queryClient.invalidateQueries({ queryKey: ["hasAccount"] });
+    }
+    prevAuthRef.current = isAuthenticated;
+  }, [isAuthenticated, queryClient]);
 
   const navigate = useCallback((screen: Screen) => {
     setCurrentScreen(screen);
@@ -78,7 +114,7 @@ function AppContent() {
     setActiveNavTab("home");
   }, [clear, queryClient]);
 
-  // Show loading state
+  // Show loading state while II is initializing
   if (isInitializing) {
     return (
       <div className="phone-container flex items-center justify-center min-h-screen">
@@ -100,13 +136,13 @@ function AppContent() {
     );
   }
 
-  // Not authenticated — show login
+  // Not authenticated — show login/signup screen
   if (!isAuthenticated) {
     return <LoginScreen />;
   }
 
-  // Authenticated but loading profile
-  if (profileLoading && !profileFetched) {
+  // Authenticated but still checking if account exists
+  if (hasAccountLoading && !hasAccountFetched) {
     return (
       <div className="phone-container flex items-center justify-center min-h-screen">
         <div className="flex flex-col items-center gap-4">
@@ -125,15 +161,28 @@ function AppContent() {
     );
   }
 
-  // Authenticated but no profile — show setup
-  const showSetup = isAuthenticated && profileFetched && profile === null;
-  if (showSetup) {
+  // Authenticated but no account yet — show login/signup screen (they need to create or link)
+  if (hasAccountFetched && hasAccount === false) {
+    return <LoginScreen />;
+  }
+
+  // Authenticated and has account but profile still loading
+  if (profileLoading && !profileFetched && !loadingTimedOut) {
     return (
-      <SetupScreen
-        onComplete={async (name, phone) => {
-          await createProfile({ name, phone });
-        }}
-      />
+      <div className="phone-container flex items-center justify-center min-h-screen">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-16 h-16 rounded-2xl gradient-purple flex items-center justify-center shadow-purple">
+            <img
+              src="/assets/generated/swiftpay-logo.dim_120x120.png"
+              alt="SwiftPay"
+              className="w-12 h-12 rounded-xl"
+            />
+          </div>
+          <p className="text-sm text-muted-foreground font-medium animate-pulse">
+            Loading your account...
+          </p>
+        </div>
+      </div>
     );
   }
 

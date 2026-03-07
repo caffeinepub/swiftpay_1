@@ -94,6 +94,8 @@ export const idlService = IDL.Service({
   'adminAdjustUserBalance' : IDL.Func([IDL.Principal, IDL.Float64], [], []),
   'adminAssignUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
   'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
+  'changeMpin' : IDL.Func([IDL.Text, IDL.Text], [], []),
+  'changePassword' : IDL.Func([IDL.Text, IDL.Text], [], []),
   'createOrUpdateProfile' : IDL.Func([IDL.Text, IDL.Text], [], []),
   'declineRequest' : IDL.Func([IDL.Nat], [], []),
   'getAllTransactions' : IDL.Func([], [IDL.Vec(Transaction)], ['query']),
@@ -115,7 +117,14 @@ export const idlService = IDL.Service({
   'getWalletBalance' : IDL.Func([], [IDL.Float64], ['query']),
   'getWalletBalanceByPhone' : IDL.Func([IDL.Text], [IDL.Float64], ['query']),
   'getWalletBalanceByUpiId' : IDL.Func([IDL.Text], [IDL.Float64], ['query']),
+  'hasAccount' : IDL.Func([], [IDL.Bool], ['query']),
   'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
+  'login' : IDL.Func([IDL.Text, IDL.Text], [IDL.Opt(Profile)], []),
+  'lookupProfileByPhone' : IDL.Func(
+      [IDL.Text],
+      [IDL.Opt(IDL.Record({ 'name' : IDL.Text, 'upiId' : IDL.Text }))],
+      ['query'],
+    ),
   'lookupProfileByUpiId' : IDL.Func(
       [IDL.Text],
       [IDL.Opt(IDL.Record({ 'name' : IDL.Text, 'upiId' : IDL.Text }))],
@@ -130,7 +139,9 @@ export const idlService = IDL.Service({
       [],
       [],
     ),
+  'signup' : IDL.Func([IDL.Text, IDL.Text, IDL.Text, IDL.Text], [], []),
   'topUpWallet' : IDL.Func([IDL.Float64], [], []),
+  'verifyMpin' : IDL.Func([IDL.Text], [IDL.Bool], []),
 });
 
 export const idlInitArgs = [];
@@ -222,6 +233,8 @@ export const idlFactory = ({ IDL }) => {
     'adminAdjustUserBalance' : IDL.Func([IDL.Principal, IDL.Float64], [], []),
     'adminAssignUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
     'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
+    'changeMpin' : IDL.Func([IDL.Text, IDL.Text], [], []),
+    'changePassword' : IDL.Func([IDL.Text, IDL.Text], [], []),
     'createOrUpdateProfile' : IDL.Func([IDL.Text, IDL.Text], [], []),
     'declineRequest' : IDL.Func([IDL.Nat], [], []),
     'getAllTransactions' : IDL.Func([], [IDL.Vec(Transaction)], ['query']),
@@ -247,7 +260,14 @@ export const idlFactory = ({ IDL }) => {
     'getWalletBalance' : IDL.Func([], [IDL.Float64], ['query']),
     'getWalletBalanceByPhone' : IDL.Func([IDL.Text], [IDL.Float64], ['query']),
     'getWalletBalanceByUpiId' : IDL.Func([IDL.Text], [IDL.Float64], ['query']),
+    'hasAccount' : IDL.Func([], [IDL.Bool], ['query']),
     'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
+    'login' : IDL.Func([IDL.Text, IDL.Text], [IDL.Opt(Profile)], []),
+    'lookupProfileByPhone' : IDL.Func(
+        [IDL.Text],
+        [IDL.Opt(IDL.Record({ 'name' : IDL.Text, 'upiId' : IDL.Text }))],
+        ['query'],
+      ),
     'lookupProfileByUpiId' : IDL.Func(
         [IDL.Text],
         [IDL.Opt(IDL.Record({ 'name' : IDL.Text, 'upiId' : IDL.Text }))],
@@ -266,7 +286,9 @@ export const idlFactory = ({ IDL }) => {
         [],
         [],
       ),
+    'signup' : IDL.Func([IDL.Text, IDL.Text, IDL.Text, IDL.Text], [], []),
     'topUpWallet' : IDL.Func([IDL.Float64], [], []),
+    'verifyMpin' : IDL.Func([IDL.Text], [IDL.Bool], []),
   });
 };
 

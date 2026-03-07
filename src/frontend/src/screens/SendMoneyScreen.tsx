@@ -20,8 +20,10 @@ import MpinModal from "../components/MpinModal";
 import PaymentSuccessAnimation from "../components/PaymentSuccessAnimation";
 import {
   useGetWalletBalance,
+  useLookupProfileByPhone,
   useLookupProfileByUpiId,
   useSendMoney,
+  useVerifyMpin,
 } from "../hooks/useQueries";
 import { formatAmount } from "../utils/format";
 
@@ -47,41 +49,64 @@ export default function SendMoneyScreen({ navigate }: SendMoneyScreenProps) {
   const [showSuccess, setShowSuccess] = useState(false);
   const [paidAmount, setPaidAmount] = useState(0);
   const [paidRecipient, setPaidRecipient] = useState("");
-  const [recipientName, setRecipientName] = useState<string | null>(null);
 
-  const debouncedRecipient = useDebounce(recipient, 300);
-  const isUpiFormat = debouncedRecipient.includes("@");
+  const debouncedRecipient = useDebounce(recipient, 400);
+
+  const isPhoneFormat = /^\d{10}$/.test(debouncedRecipient.trim());
+  const isUpiFormat = debouncedRecipient.trim().includes("@");
 
   const { data: balance } = useGetWalletBalance();
   const { mutateAsync: sendMoney, isPending } = useSendMoney();
+  const { mutateAsync: verifyMpinMutation } = useVerifyMpin();
+
+  // Only enable the relevant lookup
   const {
-    data: lookedUpProfile,
-    isFetching: isLookingUp,
-    isFetched: isLookupDone,
-  } = useLookupProfileByUpiId(isUpiFormat ? debouncedRecipient : "");
+    data: upiProfile,
+    isFetching: upiLookingUp,
+    isFetched: upiLookupDone,
+  } = useLookupProfileByUpiId(isUpiFormat ? debouncedRecipient.trim() : "");
 
-  // Update recipientName when lookup resolves
-  const prevRecipient = useRef(debouncedRecipient);
-  useEffect(() => {
-    if (prevRecipient.current !== debouncedRecipient) {
-      setRecipientName(null);
-      prevRecipient.current = debouncedRecipient;
-    }
-    if (lookedUpProfile && isUpiFormat) {
-      setRecipientName(lookedUpProfile.name);
-    } else if (!isUpiFormat && recipient.trim()) {
-      setRecipientName(null);
-    }
-  }, [lookedUpProfile, isUpiFormat, debouncedRecipient, recipient]);
+  const {
+    data: phoneProfile,
+    isFetching: phoneLookingUp,
+    isFetched: phoneLookupDone,
+  } = useLookupProfileByPhone(isPhoneFormat ? debouncedRecipient.trim() : "");
 
-  const isVerified = isUpiFormat && !!lookedUpProfile && !isLookingUp;
+  const lookedUpProfile = isUpiFormat
+    ? upiProfile
+    : isPhoneFormat
+      ? phoneProfile
+      : null;
+  const isLookingUp = isUpiFormat
+    ? upiLookingUp
+    : isPhoneFormat
+      ? phoneLookingUp
+      : false;
+  const isLookupDone = isUpiFormat
+    ? upiLookupDone
+    : isPhoneFormat
+      ? phoneLookupDone
+      : false;
+
+  const isVerified =
+    (isUpiFormat || isPhoneFormat) && !!lookedUpProfile && !isLookingUp;
   const isNotFound =
-    isUpiFormat && isLookupDone && !isLookingUp && !lookedUpProfile;
+    (isUpiFormat || isPhoneFormat) &&
+    isLookupDone &&
+    !isLookingUp &&
+    !lookedUpProfile;
+
   const isPayDisabled =
     isPending ||
-    !recipient ||
+    !recipient.trim() ||
     !amount ||
-    (isUpiFormat && (isLookingUp || !isVerified));
+    ((isUpiFormat || isPhoneFormat) && (isLookingUp || !isVerified));
+
+  // Clear recipientName when recipient changes
+  const prevDebouncedRef = useRef(debouncedRecipient);
+  useEffect(() => {
+    prevDebouncedRef.current = debouncedRecipient;
+  }, [debouncedRecipient]);
 
   const getAvatarInitials = (name: string) =>
     name
@@ -110,7 +135,7 @@ export default function SendMoneyScreen({ navigate }: SendMoneyScreenProps) {
 
   const handleMpinConfirm = async (_pin: string) => {
     const amt = Number.parseFloat(amount);
-    const displayName = recipientName || recipient.trim();
+    const displayName = lookedUpProfile?.name || recipient.trim();
     try {
       await sendMoney({
         to: recipient.trim(),
@@ -135,6 +160,9 @@ export default function SendMoneyScreen({ navigate }: SendMoneyScreenProps) {
   };
 
   const quickAmounts = [100, 200, 500, 1000];
+
+  const recipientDisplayName = lookedUpProfile?.name || recipient.trim();
+  const showInputIcon = isUpiFormat || isPhoneFormat;
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
@@ -186,7 +214,7 @@ export default function SendMoneyScreen({ navigate }: SendMoneyScreenProps) {
         {/* Recipient */}
         <div className="flex flex-col gap-2">
           <Label className="text-sm font-semibold text-foreground">
-            To (UPI ID / Phone)
+            To (UPI ID / Phone Number)
           </Label>
           <div className="relative">
             <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -195,9 +223,8 @@ export default function SendMoneyScreen({ navigate }: SendMoneyScreenProps) {
               value={recipient}
               onChange={(e) => {
                 setRecipient(e.target.value);
-                setRecipientName(null);
               }}
-              placeholder="Enter UPI ID (e.g. 9876543210@swiftpay) or phone"
+              placeholder="UPI ID (e.g. 9876543210@swiftpay) or 10-digit phone"
               className={`pl-10 h-12 rounded-xl bg-card text-base transition-colors ${
                 isVerified
                   ? "border-green-500 focus-visible:ring-green-500/30"
@@ -206,7 +233,7 @@ export default function SendMoneyScreen({ navigate }: SendMoneyScreenProps) {
                     : ""
               }`}
             />
-            {isUpiFormat && (
+            {showInputIcon && (
               <div className="absolute right-3.5 top-1/2 -translate-y-1/2">
                 {isLookingUp ? (
                   <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
@@ -219,7 +246,14 @@ export default function SendMoneyScreen({ navigate }: SendMoneyScreenProps) {
             )}
           </div>
 
-          {/* UPI lookup feedback */}
+          {/* Hint text */}
+          {!debouncedRecipient.trim() && (
+            <p className="text-xs text-muted-foreground">
+              Enter a 10-digit mobile number or UPI ID with @
+            </p>
+          )}
+
+          {/* Lookup feedback */}
           <AnimatePresence mode="wait">
             {isVerified && lookedUpProfile && (
               <motion.div
@@ -269,7 +303,9 @@ export default function SendMoneyScreen({ navigate }: SendMoneyScreenProps) {
                 style={{ color: "oklch(0.55 0.18 25)" }}
               >
                 <XCircle className="w-3.5 h-3.5" />
-                UPI ID not found. Please check and try again.
+                {isPhoneFormat
+                  ? "No account found for this phone number."
+                  : "UPI ID not found. Please check and try again."}
               </motion.p>
             )}
           </AnimatePresence>
@@ -345,7 +381,7 @@ export default function SendMoneyScreen({ navigate }: SendMoneyScreenProps) {
                   Sending {formatAmount(Number.parseFloat(amount) || 0)}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  to {recipientName || recipient}
+                  to {recipientDisplayName}
                 </p>
               </div>
             </div>
@@ -381,9 +417,12 @@ export default function SendMoneyScreen({ navigate }: SendMoneyScreenProps) {
         open={showMpin}
         onClose={() => setShowMpin(false)}
         onConfirm={handleMpinConfirm}
+        onVerify={async (mpinHash) => {
+          return await verifyMpinMutation(mpinHash);
+        }}
         isLoading={isPending}
         title="Confirm Payment"
-        subtitle={`Pay ${formatAmount(Number.parseFloat(amount) || 0)} to ${recipientName || recipient}`}
+        subtitle={`Pay ${formatAmount(Number.parseFloat(amount) || 0)} to ${lookedUpProfile?.name || recipient.trim()}`}
       />
 
       {showSuccess && (

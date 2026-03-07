@@ -411,3 +411,119 @@ export function useLookupProfileByUpiId(upiId: string) {
     staleTime: 10000,
   });
 }
+
+export function useLookupProfileByPhone(phone: string) {
+  const { actor } = useActor();
+  return useQuery<{ name: string; upiId: string } | null>({
+    queryKey: ["lookupPhone", phone],
+    queryFn: async () => {
+      if (!actor || !phone.trim()) return null;
+      return actor.lookupProfileByPhone(phone.trim());
+    },
+    enabled: !!actor && /^\d{10}$/.test(phone.trim()),
+    retry: false,
+    staleTime: 10000,
+  });
+}
+
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+
+export function useSignup() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      name,
+      phone,
+      passwordHash,
+      mpinHash,
+    }: {
+      name: string;
+      phone: string;
+      passwordHash: string;
+      mpinHash: string;
+    }) => {
+      if (!actor) throw new Error("Actor not available");
+      await actor.signup(name, phone, passwordHash, mpinHash);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["callerProfile"] });
+      queryClient.invalidateQueries({ queryKey: ["hasAccount"] });
+    },
+  });
+}
+
+export function useLogin() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      phone,
+      passwordHash,
+    }: {
+      phone: string;
+      passwordHash: string;
+    }) => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.login(phone, passwordHash);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["callerProfile"] });
+      queryClient.invalidateQueries({ queryKey: ["hasAccount"] });
+    },
+  });
+}
+
+export function useVerifyMpin() {
+  const { actor } = useActor();
+  return useMutation({
+    mutationFn: async (mpinHash: string) => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.verifyMpin(mpinHash);
+    },
+  });
+}
+
+export function useHasAccount() {
+  const { actor, isFetching: actorFetching } = useActor();
+  return useQuery<boolean>({
+    queryKey: ["hasAccount"],
+    queryFn: async () => {
+      if (!actor) return false;
+      return actor.hasAccount();
+    },
+    enabled: !!actor && !actorFetching,
+  });
+}
+
+export function useChangePassword() {
+  const { actor } = useActor();
+  return useMutation({
+    mutationFn: async ({
+      oldPasswordHash,
+      newPasswordHash,
+    }: {
+      oldPasswordHash: string;
+      newPasswordHash: string;
+    }) => {
+      if (!actor) throw new Error("Actor not available");
+      await actor.changePassword(oldPasswordHash, newPasswordHash);
+    },
+  });
+}
+
+export function useChangeMpin() {
+  const { actor } = useActor();
+  return useMutation({
+    mutationFn: async ({
+      oldMpinHash,
+      newMpinHash,
+    }: {
+      oldMpinHash: string;
+      newMpinHash: string;
+    }) => {
+      if (!actor) throw new Error("Actor not available");
+      await actor.changeMpin(oldMpinHash, newMpinHash);
+    },
+  });
+}

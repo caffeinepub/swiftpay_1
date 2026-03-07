@@ -4,17 +4,27 @@ import { Label } from "@/components/ui/label";
 import {
   ArrowLeft,
   Camera,
+  CheckCircle2,
+  ImageUp,
   Loader2,
   QrCode,
   SwitchCamera,
   X,
+  XCircle,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { Screen } from "../App";
 import type { Profile } from "../backend.d";
 import MpinModal from "../components/MpinModal";
-import { useGetWalletBalance, useSendMoney } from "../hooks/useQueries";
+import PaymentSuccessAnimation from "../components/PaymentSuccessAnimation";
+import {
+  useGetWalletBalance,
+  useLookupProfileByUpiId,
+  useSendMoney,
+  useVerifyMpin,
+} from "../hooks/useQueries";
 import { useQRScanner } from "../qr-code/useQRScanner";
 import { formatAmount } from "../utils/format";
 
@@ -23,14 +33,51 @@ interface ScanPayScreenProps {
   profile: Profile | null | undefined;
 }
 
+// Parse UPI deep-link from scanned QR
+function parseUpiQR(raw: string): {
+  upiId: string;
+  name: string | null;
+  amount: string | null;
+} {
+  try {
+    if (raw.startsWith("upi://")) {
+      const url = new URL(raw);
+      return {
+        upiId: url.searchParams.get("pa") || raw,
+        name: url.searchParams.get("pn"),
+        amount: url.searchParams.get("am"),
+      };
+    }
+  } catch {
+    // fall through
+  }
+  return { upiId: raw, name: null, amount: null };
+}
+
+function getAvatarInitials(name: string) {
+  return name
+    .split(" ")
+    .map((n) => n[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+}
+
 export default function ScanPayScreen({ navigate }: ScanPayScreenProps) {
-  const [scannedValue, setScannedValue] = useState<string | null>(null);
+  const [scannedUpiId, setScannedUpiId] = useState<string | null>(null);
+  const [scannedName, setScannedName] = useState<string | null>(null);
   const [amount, setAmount] = useState("");
   const [showMpin, setShowMpin] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [paidAmount, setPaidAmount] = useState(0);
+  const [paidRecipient, setPaidRecipient] = useState("");
   const [_hasScanStarted, setHasScanStarted] = useState(false);
+  const [isUploadProcessing, setIsUploadProcessing] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: balance } = useGetWalletBalance();
   const { mutateAsync: sendMoney, isPending } = useSendMoney();
+  const { mutateAsync: verifyMpinMutation } = useVerifyMpin();
 
   const {
     qrResults,
@@ -52,29 +99,108 @@ export default function ScanPayScreen({ navigate }: ScanPayScreenProps) {
     maxResults: 1,
   });
 
-  // Pick up QR scan result
+  // UPI format detection and lookup
+  const isUpiFormat = (scannedUpiId ?? "").includes("@");
+  const {
+    data: lookedUpProfile,
+    isFetching: isLookingUp,
+    isFetched: isLookupDone,
+  } = useLookupProfileByUpiId(isUpiFormat && scannedUpiId ? scannedUpiId : "");
+
+  const isVerified = isUpiFormat && !!lookedUpProfile && !isLookingUp;
+  const isNotFound =
+    isUpiFormat && isLookupDone && !isLookingUp && !lookedUpProfile;
+
+  // Pick up QR scan result and parse UPI deep-link
   useEffect(() => {
-    if (qrResults.length > 0 && !scannedValue) {
-      const result = qrResults[0].data;
-      setScannedValue(result);
+    if (qrResults.length > 0 && !scannedUpiId) {
+      const raw = qrResults[0].data;
+      const parsed = parseUpiQR(raw);
+      setScannedUpiId(parsed.upiId);
+      setScannedName(parsed.name);
+      if (parsed.amount) setAmount(parsed.amount);
       void stopScanning();
       toast.success("QR code scanned!");
     }
-  }, [qrResults, scannedValue, stopScanning]);
+  }, [qrResults, scannedUpiId, stopScanning]);
 
   const handleStartScan = async () => {
     setHasScanStarted(true);
     clearResults();
-    setScannedValue(null);
+    setScannedUpiId(null);
+    setScannedName(null);
+    setAmount("");
     await startScanning();
   };
 
   const handleReset = async () => {
-    setScannedValue(null);
+    setScannedUpiId(null);
+    setScannedName(null);
     setAmount("");
     clearResults();
     await stopScanning();
     setHasScanStarted(false);
+  };
+
+  const handleUploadQR = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please select an image file");
+      return;
+    }
+    setIsUploadProcessing(true);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          setIsUploadProcessing(false);
+          toast.error("Could not process image");
+          return;
+        }
+        ctx.drawImage(img, 0, 0);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        if (!window.jsQR) {
+          setIsUploadProcessing(false);
+          toast.error("QR scanner not ready, please try again");
+          return;
+        }
+        const code = window.jsQR(
+          imageData.data,
+          imageData.width,
+          imageData.height,
+        );
+        setIsUploadProcessing(false);
+        if (code?.data) {
+          const parsed = parseUpiQR(code.data);
+          setScannedUpiId(parsed.upiId);
+          setScannedName(parsed.name);
+          if (parsed.amount) setAmount(parsed.amount);
+          toast.success("QR code detected from image!");
+        } else {
+          toast.error(
+            "No QR code found in the image. Please try a clearer photo.",
+          );
+        }
+      };
+      img.onerror = () => {
+        setIsUploadProcessing(false);
+        toast.error("Could not load image");
+      };
+      img.src = ev.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+    // reset so same file can be re-uploaded
+    e.target.value = "";
   };
 
   const handlePay = () => {
@@ -92,27 +218,41 @@ export default function ScanPayScreen({ navigate }: ScanPayScreenProps) {
 
   const handleMpinConfirm = async (_pin: string) => {
     const amt = Number.parseFloat(amount);
+    const displayName =
+      lookedUpProfile?.name || scannedName || scannedUpiId || "";
     try {
       await sendMoney({
-        to: scannedValue!,
+        to: scannedUpiId!,
         amount: amt,
         note: "QR Payment",
         confirmedByMpin: true,
       });
       setShowMpin(false);
-      toast.success(`${formatAmount(amt)} paid successfully!`);
-      navigate("home");
-    } catch (err: unknown) {
+      setPaidAmount(amt);
+      setPaidRecipient(displayName);
+      setShowSuccess(true);
+    } catch (err) {
       setShowMpin(false);
-      const msg = err instanceof Error ? err.message : "Payment failed";
-      toast.error(msg);
+      toast.error(err instanceof Error ? err.message : "Payment failed");
     }
   };
+
+  const handleSuccessDone = () => {
+    setShowSuccess(false);
+    navigate("home");
+  };
+
+  // Allow payment even if not verified (backend is authoritative for rejection).
+  // Only block while actively looking up or if no amount entered.
+  const isPayDisabled = isPending || !amount || isLookingUp;
 
   const isMobile =
     /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
       navigator.userAgent,
     );
+
+  const displayRecipientName =
+    lookedUpProfile?.name || scannedName || scannedUpiId || "";
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
@@ -163,7 +303,7 @@ export default function ScanPayScreen({ navigate }: ScanPayScreenProps) {
       </div>
 
       <div className="flex-1 px-4 py-4 -mt-2">
-        {!scannedValue ? (
+        {!scannedUpiId ? (
           <div className="flex flex-col gap-4">
             {/* Camera view */}
             <div className="bg-card rounded-3xl overflow-hidden card-shadow relative">
@@ -177,7 +317,7 @@ export default function ScanPayScreen({ navigate }: ScanPayScreenProps) {
                       Camera not supported
                     </p>
                     <p className="text-sm text-muted-foreground mt-1">
-                      Your browser doesn't support camera access
+                      Your browser doesn&apos;t support camera access
                     </p>
                   </div>
                 </div>
@@ -247,6 +387,16 @@ export default function ScanPayScreen({ navigate }: ScanPayScreenProps) {
               )}
             </div>
 
+            {/* Hidden file input for QR upload */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleFileChange}
+              data-ocid="scan.upload_button"
+            />
+
             {/* Controls */}
             <div className="flex gap-3">
               {!isActive ? (
@@ -281,6 +431,23 @@ export default function ScanPayScreen({ navigate }: ScanPayScreenProps) {
                   Stop
                 </Button>
               )}
+
+              <Button
+                onClick={handleUploadQR}
+                disabled={isUploadProcessing}
+                variant="outline"
+                className="h-12 px-4 rounded-xl font-bold"
+                title="Upload QR from gallery"
+              >
+                {isUploadProcessing ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <span className="flex items-center gap-2">
+                    <ImageUp className="w-4 h-4" />
+                    <span className="hidden sm:inline">Upload QR</span>
+                  </span>
+                )}
+              </Button>
             </div>
 
             {/* Instructions */}
@@ -290,9 +457,15 @@ export default function ScanPayScreen({ navigate }: ScanPayScreenProps) {
               </p>
               <ul className="space-y-1.5">
                 {[
-                  { num: 1, text: "Tap 'Start Camera' to activate scanner" },
-                  { num: 2, text: "Point camera at any UPI QR code" },
-                  { num: 3, text: "Enter amount and confirm payment" },
+                  {
+                    num: 1,
+                    text: "Tap 'Start Camera' to scan live, or 'Upload QR' to pick from gallery",
+                  },
+                  {
+                    num: 2,
+                    text: "Point camera at any UPI QR code (or select a QR image)",
+                  },
+                  { num: 3, text: "Recipient is verified, enter amount & pay" },
                 ].map(({ num, text }) => (
                   <li
                     key={num}
@@ -310,36 +483,149 @@ export default function ScanPayScreen({ navigate }: ScanPayScreenProps) {
         ) : (
           // Payment form after scan
           <div className="flex flex-col gap-4 animate-scale-in">
-            {/* Scanned info */}
+            {/* Recipient verification card */}
             <div className="bg-card rounded-2xl p-4 card-shadow">
-              <div className="flex items-center gap-3 mb-3">
-                <div
-                  className="w-12 h-12 rounded-2xl flex items-center justify-center"
-                  style={{
-                    background:
-                      "linear-gradient(135deg, oklch(0.42 0.18 148) 0%, oklch(0.38 0.16 165) 100%)",
-                  }}
-                >
-                  <QrCode className="w-6 h-6 text-white" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs text-muted-foreground font-medium">
-                    Paying to
-                  </p>
-                  <p className="font-bold text-foreground truncate">
-                    {scannedValue}
-                  </p>
-                </div>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  Paying to
+                </p>
                 <button
                   type="button"
                   onClick={handleReset}
-                  className="w-8 h-8 rounded-xl bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                  className="w-7 h-7 rounded-xl bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-3.5 h-3.5" />
                 </button>
               </div>
+
+              {/* Lookup status */}
+              <AnimatePresence mode="wait">
+                {isLookingUp && (
+                  <motion.div
+                    key="looking-up"
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    transition={{ duration: 0.2 }}
+                    className="flex items-center gap-3 py-2"
+                  >
+                    <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center shrink-0">
+                      <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">
+                        Verifying recipient...
+                      </p>
+                      <p className="text-xs text-muted-foreground font-mono truncate">
+                        {scannedUpiId}
+                      </p>
+                    </div>
+                  </motion.div>
+                )}
+
+                {isVerified && lookedUpProfile && (
+                  <motion.div
+                    key="verified"
+                    data-ocid="scan.recipient_verified_card"
+                    initial={{ opacity: 0, y: -8, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -8, scale: 0.97 }}
+                    transition={{ duration: 0.22, ease: "easeOut" }}
+                    className="flex items-center gap-3 p-3 rounded-xl border border-green-500/30"
+                    style={{ background: "oklch(0.97 0.04 148 / 0.15)" }}
+                  >
+                    <div className="w-10 h-10 rounded-full gradient-purple flex items-center justify-center shrink-0 shadow-sm">
+                      <span className="text-white text-sm font-bold">
+                        {getAvatarInitials(lookedUpProfile.name)}
+                      </span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-foreground truncate">
+                        {lookedUpProfile.name}
+                      </p>
+                      <p className="text-xs text-muted-foreground truncate font-mono">
+                        {lookedUpProfile.upiId}
+                      </p>
+                    </div>
+                    <span
+                      className="shrink-0 flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-full"
+                      style={{
+                        color: "oklch(0.55 0.18 148)",
+                        background: "oklch(0.55 0.18 148 / 0.12)",
+                      }}
+                    >
+                      <CheckCircle2 className="w-3 h-3" />
+                      Verified
+                    </span>
+                  </motion.div>
+                )}
+
+                {isNotFound && (
+                  <motion.div
+                    key="not-found"
+                    data-ocid="scan.recipient_error"
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    transition={{ duration: 0.2 }}
+                    className="flex items-center gap-3 p-3 rounded-xl border border-yellow-500/30"
+                    style={{ background: "oklch(0.97 0.06 85 / 0.12)" }}
+                  >
+                    <div className="w-10 h-10 rounded-full bg-yellow-500/10 flex items-center justify-center shrink-0">
+                      <XCircle className="w-5 h-5 text-yellow-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p
+                        className="text-sm font-semibold"
+                        style={{ color: "oklch(0.52 0.16 85)" }}
+                      >
+                        Recipient not in SwiftPay
+                      </p>
+                      <p className="text-xs text-muted-foreground font-mono truncate">
+                        {scannedUpiId}
+                      </p>
+                      <p
+                        className="text-xs mt-0.5"
+                        style={{ color: "oklch(0.52 0.16 85)" }}
+                      >
+                        Payment may fail. You can still attempt it.
+                      </p>
+                    </div>
+                  </motion.div>
+                )}
+
+                {!isUpiFormat && scannedUpiId && (
+                  <motion.div
+                    key="raw-value"
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    transition={{ duration: 0.2 }}
+                    className="flex items-center gap-3"
+                  >
+                    <div
+                      className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0"
+                      style={{
+                        background:
+                          "linear-gradient(135deg, oklch(0.42 0.18 148) 0%, oklch(0.38 0.16 165) 100%)",
+                      }}
+                    >
+                      <QrCode className="w-5 h-5 text-white" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-foreground truncate">
+                        {scannedUpiId}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Scanned QR value
+                      </p>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
+            {/* Amount input */}
             <div className="flex flex-col gap-2">
               <Label className="text-sm font-semibold text-foreground">
                 Amount (₹)
@@ -349,6 +635,7 @@ export default function ScanPayScreen({ navigate }: ScanPayScreenProps) {
                   ₹
                 </span>
                 <Input
+                  data-ocid="scan.amount_input"
                   value={amount}
                   onChange={(e) =>
                     setAmount(e.target.value.replace(/[^0-9.]/g, ""))
@@ -365,7 +652,42 @@ export default function ScanPayScreen({ navigate }: ScanPayScreenProps) {
               </p>
             </div>
 
-            <div className="flex gap-3 mt-4">
+            {/* Quick amount chips */}
+            <div className="flex gap-2 flex-wrap">
+              {[100, 200, 500, 1000].map((qa) => (
+                <button
+                  type="button"
+                  key={qa}
+                  onClick={() => setAmount(String(qa))}
+                  className={`px-3 py-1.5 rounded-xl text-sm font-semibold transition-all ${
+                    amount === String(qa)
+                      ? "gradient-purple text-white shadow-purple"
+                      : "bg-muted text-muted-foreground hover:bg-accent"
+                  }`}
+                >
+                  ₹{qa}
+                </button>
+              ))}
+            </div>
+
+            {/* Pay summary */}
+            {amount && scannedUpiId && (
+              <div className="bg-muted/50 rounded-2xl p-4 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl gradient-purple flex items-center justify-center">
+                  <QrCode className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-foreground">
+                    Sending {formatAmount(Number.parseFloat(amount) || 0)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    to {displayRecipientName}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-3 mt-2">
               <Button
                 variant="outline"
                 onClick={handleReset}
@@ -374,8 +696,9 @@ export default function ScanPayScreen({ navigate }: ScanPayScreenProps) {
                 Scan Again
               </Button>
               <Button
+                data-ocid="scan.pay_button"
                 onClick={handlePay}
-                disabled={!amount || isPending}
+                disabled={isPayDisabled}
                 className="flex-1 h-14 rounded-2xl font-bold text-white border-0"
                 style={{
                   background:
@@ -384,6 +707,11 @@ export default function ScanPayScreen({ navigate }: ScanPayScreenProps) {
               >
                 {isPending ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
+                ) : isLookingUp ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Verifying...
+                  </span>
                 ) : (
                   "Pay Now"
                 )}
@@ -397,10 +725,22 @@ export default function ScanPayScreen({ navigate }: ScanPayScreenProps) {
         open={showMpin}
         onClose={() => setShowMpin(false)}
         onConfirm={handleMpinConfirm}
+        onVerify={async (mpinHash) => {
+          return await verifyMpinMutation(mpinHash);
+        }}
         isLoading={isPending}
         title="Confirm QR Payment"
-        subtitle={`Pay ${formatAmount(Number.parseFloat(amount) || 0)}`}
+        subtitle={`Pay ${formatAmount(Number.parseFloat(amount) || 0)} to ${displayRecipientName}`}
       />
+
+      {showSuccess && (
+        <PaymentSuccessAnimation
+          amount={paidAmount}
+          recipient={paidRecipient}
+          transactionId={`TXN${Date.now().toString(36).toUpperCase()}`}
+          onDone={handleSuccessDone}
+        />
+      )}
     </div>
   );
 }

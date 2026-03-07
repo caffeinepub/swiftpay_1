@@ -90,8 +90,6 @@
     "react-quill-new": "3.4.6",
     "three": "^0.176.0",
     "zustand": "~5.0.5",
-    "motion": "^12.34.3",
-    "qrcode": "^1.5.4",
-    "@types/qrcode": "^1.5.5"
+    "motion": "^12.34.3"
   }
 }

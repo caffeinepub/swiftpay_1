@@ -83,6 +83,8 @@ export interface _SERVICE {
   'adminAdjustUserBalance' : ActorMethod<[Principal, number], undefined>,
   'adminAssignUserRole' : ActorMethod<[Principal, UserRole], undefined>,
   'assignCallerUserRole' : ActorMethod<[Principal, UserRole], undefined>,
+  'changeMpin' : ActorMethod<[string, string], undefined>,
+  'changePassword' : ActorMethod<[string, string], undefined>,
   'createOrUpdateProfile' : ActorMethod<[string, string], undefined>,
   'declineRequest' : ActorMethod<[bigint], undefined>,
   'getAllTransactions' : ActorMethod<[], Array<Transaction>>,
@@ -100,7 +102,13 @@ export interface _SERVICE {
   'getWalletBalance' : ActorMethod<[], number>,
   'getWalletBalanceByPhone' : ActorMethod<[string], number>,
   'getWalletBalanceByUpiId' : ActorMethod<[string], number>,
+  'hasAccount' : ActorMethod<[], boolean>,
   'isCallerAdmin' : ActorMethod<[], boolean>,
+  'login' : ActorMethod<[string, string], [] | [Profile]>,
+  'lookupProfileByPhone' : ActorMethod<
+    [string],
+    [] | [{ 'name' : string, 'upiId' : string }]
+  >,
   'lookupProfileByUpiId' : ActorMethod<
     [string],
     [] | [{ 'name' : string, 'upiId' : string }]
@@ -113,7 +121,9 @@ export interface _SERVICE {
     [string, number, [] | [string], boolean],
     undefined
   >,
+  'signup' : ActorMethod<[string, string, string, string], undefined>,
   'topUpWallet' : ActorMethod<[number], undefined>,
+  'verifyMpin' : ActorMethod<[string], boolean>,
 }
 export declare const idlService: IDL.ServiceClass;
 export declare const idlInitArgs: IDL.Type[];
