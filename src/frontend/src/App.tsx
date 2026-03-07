@@ -12,7 +12,6 @@ import {
 import AddMoneyScreen from "./screens/AddMoneyScreen";
 import AdminPanelScreen from "./screens/AdminPanelScreen";
 import HomeScreen from "./screens/HomeScreen";
-// Screens
 import LoginScreen from "./screens/LoginScreen";
 import NotificationsScreen from "./screens/NotificationsScreen";
 import ProfileScreen from "./screens/ProfileScreen";
@@ -23,7 +22,6 @@ import ScanPayScreen from "./screens/ScanPayScreen";
 import SendMoneyScreen from "./screens/SendMoneyScreen";
 import TransactionHistoryScreen from "./screens/TransactionHistoryScreen";
 
-// Navigation
 import BottomNav from "./components/BottomNav";
 
 export type Screen =
@@ -41,7 +39,6 @@ export type Screen =
 
 export type NavTab = "home" | "history" | "scan" | "requests" | "profile";
 
-// Shared loading spinner UI
 function LoadingSpinner({ message }: { message?: string }) {
   return (
     <div className="phone-container flex items-center justify-center min-h-screen">
@@ -69,6 +66,55 @@ function LoadingSpinner({ message }: { message?: string }) {
   );
 }
 
+function ProfileErrorScreen({
+  onRetry,
+  onLogout,
+}: {
+  onRetry: () => void;
+  onLogout: () => void;
+}) {
+  return (
+    <div className="phone-container flex items-center justify-center min-h-screen px-6">
+      <div className="flex flex-col items-center gap-6 text-center">
+        <div className="w-16 h-16 rounded-2xl gradient-purple flex items-center justify-center shadow-purple">
+          <img
+            src="/assets/generated/swiftpay-logo.dim_120x120.png"
+            alt="SwiftPay"
+            className="w-12 h-12 rounded-xl"
+          />
+        </div>
+        <div>
+          <h2 className="text-lg font-bold text-foreground mb-1">
+            Couldn't load your account
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            There was a problem loading your profile. Please try again or log
+            in.
+          </p>
+        </div>
+        <div className="flex flex-col gap-3 w-full">
+          <button
+            type="button"
+            data-ocid="error.primary_button"
+            onClick={onRetry}
+            className="w-full h-12 text-base font-bold rounded-2xl gradient-purple text-white border-0 shadow-purple hover:opacity-90 transition-opacity"
+          >
+            Try Again
+          </button>
+          <button
+            type="button"
+            data-ocid="error.secondary_button"
+            onClick={onLogout}
+            className="w-full h-12 text-base font-semibold rounded-2xl bg-muted text-muted-foreground hover:bg-muted/80 transition-colors"
+          >
+            Log Out
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AppContent() {
   const { isInitializing } = useInternetIdentity();
   const queryClient = useQueryClient();
@@ -88,15 +134,12 @@ function AppContent() {
   const [currentScreen, setCurrentScreen] = useState<Screen>("home");
   const [activeNavTab, setActiveNavTab] = useState<NavTab>("home");
 
-  // Timeout fallback: if stuck on "Loading your account..." for > 8s, bail out
   const [loadingTimedOut, setLoadingTimedOut] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Track whether we've already shown the session-expired toast
   const sessionExpiredToastShown = useRef(false);
 
   useEffect(() => {
-    // Only start the timer when we have an account and profile hasn't loaded yet
     if (hasAccount && profileLoading && !profileFetched) {
       timeoutRef.current = setTimeout(() => {
         setLoadingTimedOut(true);
@@ -116,7 +159,6 @@ function AppContent() {
     };
   }, [hasAccount, profileLoading, profileFetched]);
 
-  // Show session-expired toast when user had a previous session but hasAccount now returns false
   useEffect(() => {
     if (
       hasAccountFetched &&
@@ -131,7 +173,6 @@ function AppContent() {
 
   const navigate = useCallback((screen: Screen) => {
     setCurrentScreen(screen);
-    // Sync nav tab
     if (screen === "home") setActiveNavTab("home");
     else if (screen === "history") setActiveNavTab("history");
     else if (screen === "scan") setActiveNavTab("scan");
@@ -152,7 +193,13 @@ function AppContent() {
     setActiveNavTab("home");
   }, [queryClient]);
 
-  // ── Routing ────────────────────────────────────────────────────────────────
+  const handleRetry = useCallback(() => {
+    setLoadingTimedOut(false);
+    queryClient.invalidateQueries({ queryKey: ["callerProfile"] });
+    queryClient.invalidateQueries({ queryKey: ["hasAccount"] });
+    void queryClient.refetchQueries({ queryKey: ["hasAccount"] });
+    void queryClient.refetchQueries({ queryKey: ["callerProfile"] });
+  }, [queryClient]);
 
   // 1. While II is initializing OR while checking if user has account
   if (isInitializing || (!hasAccountFetched && hasAccountLoading)) {
@@ -164,9 +211,20 @@ function AppContent() {
     return <LoginScreen />;
   }
 
-  // 3. Has account but profile still loading (with 8s timeout fallback)
-  if (hasAccount && profileLoading && !profileFetched && !loadingTimedOut) {
+  // 3. Loading timed out — clear session and redirect to login
+  if (loadingTimedOut) {
+    localStorage.removeItem(SWIFTPAY_LOGGED_IN_KEY);
+    return <LoginScreen />;
+  }
+
+  // 4. Has account but profile still loading
+  if (hasAccount && profileLoading && !profileFetched) {
     return <LoadingSpinner message="Loading your account..." />;
+  }
+
+  // 5. Has account, profile fetch completed, but profile is null — show recovery screen
+  if (hasAccount && profileFetched && !profileLoading && !profile) {
+    return <ProfileErrorScreen onRetry={handleRetry} onLogout={handleLogout} />;
   }
 
   // Main app

@@ -1,37 +1,26 @@
 # SwiftPay
 
 ## Current State
-
-SwiftPay is a full-stack PhonePe-style payment app with:
-- Phone+password+MPIN-based login/signup (NOT Internet Identity)
-- Wallet, send/receive money, QR payments, bill payments, recharge
-- Admin panel, transaction history, notifications
-- The backend uses `principalToPhone` to map anonymous principals to phone accounts
-- `accounts` map stores phone -> Account (with passwordHash, mpinHash, principalId)
-- `profiles` map stores Principal -> Profile
-- `getCallerUserProfile` calls `profiles.get(caller)` which fails on revisit because the caller is a new anonymous principal
+Full PhonePe-style payment app with wallet, send/request money, bill payments, recharge, QR scan, transaction history, notifications, and admin panel. Login/signup with phone + password + MPIN. Payment success animations with chime and haptic vibration. QR code generation and scanning with UPI deep-link format.
 
 ## Requested Changes (Diff)
 
 ### Add
-- Nothing new
+- Helper function `ensureUserRole(caller)` that checks `principalToPhone` and auto-assigns `#user` role if missing -- called at the top of every protected function before the permission check
 
 ### Modify
-- **Backend `login` function**: After verifying password, migrate the profile to the new caller principal. Remove old principal's profile entry. Update `accounts` to store the latest `principalId`. Ensure role is assigned to the new principal.
-- **Backend `getCallerUserProfile`**: Look up profile via `principalToPhone` first, then `profiles.get(caller)`. If `principalToPhone` has a phone for this caller, use `getProfileByPhone` to find the profile.
-- **Backend `getWalletBalance`**: Same fix -- look up via principalToPhone if direct profile lookup fails.
-- **Backend `getTransactionHistory`**: Same fix.
-- **Backend `getRecentTransactions`**: Same fix.
-- **Backend `getNotifications`**: Same fix.
-- **Backend `verifyMpin`**: Already works via principalToPhone -- keep as is.
-- **Backend `hasAccount`**: Already works via principalToPhone -- keep as is.
+- `topUpWallet`: replace hard `Runtime.trap("Unauthorized: Only users can top up wallet")` with `ensureUserRole` call so logged-in users who lost their session role can still top up
+- `sendMoney`: same fix -- call `ensureUserRole` before the permission check
+- `requestMoney`, `acceptRequest`, `declineRequest`, `payBill`: same fix
+- `getTransactionHistory`, `getRecentTransactions`, `getNotifications`, `markNotificationAsRead`, `getUnreadNotificationCount`: same fix
+- `getWalletBalance`, `getWalletBalanceByUpiId`, `getWalletBalanceByPhone`: same fix
+- `saveCallerUserProfile`, `createOrUpdateProfile`: same fix
 
 ### Remove
-- Nothing
+- Nothing removed
 
 ## Implementation Plan
-
-1. Fix `login` to migrate profile to new principal and update `accounts.principalId`.
-2. Fix `getCallerUserProfile` to resolve profile via `principalToPhone` -> phone -> profile lookup if `profiles.get(caller)` is null.
-3. Fix all other caller-dependent query functions (`getWalletBalance`, `getTransactionHistory`, `getRecentTransactions`, `getNotifications`, `markNotificationAsRead`, `getPendingMoneyRequests`, `getUnreadNotificationCount`, `payBill`, `topUpWallet`, `sendMoney`, `requestMoney`, `acceptRequest`, `declineRequest`) to similarly resolve the profile via phone mapping when direct principal lookup fails.
-4. The key pattern: whenever the code does `profiles.get(caller)` and traps if null, first try to find the profile via `principalToPhone.get(caller)` -> phone -> `getProfileByPhone(phone)` and migrate the entry to the caller principal if found.
+1. Add `ensureUserRole(caller: Principal): Bool` helper that checks `principalToPhone` and conditionally adds `#user` role
+2. In every function that does `AccessControl.hasPermission(accessControlState, caller, #user)` check: call `ensureUserRole(caller)` first, then re-check or use the return value
+3. Keep all existing logic, data structures, and API signatures identical
+4. Rebuild backend, redeploy

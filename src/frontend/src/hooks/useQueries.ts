@@ -37,10 +37,16 @@ export function useGetCallerProfile() {
     queryKey: ["callerProfile"],
     queryFn: async () => {
       if (!actor) throw new Error("Actor not available");
-      return actor.getCallerUserProfile();
+      try {
+        return await actor.getCallerUserProfile();
+      } catch {
+        return null;
+      }
     },
     enabled: !!actor && !actorFetching,
     retry: false,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
   return {
     ...query,
@@ -452,6 +458,8 @@ export function useSignup() {
       localStorage.setItem(SWIFTPAY_LOGGED_IN_KEY, "true");
       queryClient.invalidateQueries({ queryKey: ["callerProfile"] });
       queryClient.invalidateQueries({ queryKey: ["hasAccount"] });
+      void queryClient.refetchQueries({ queryKey: ["hasAccount"] });
+      void queryClient.refetchQueries({ queryKey: ["callerProfile"] });
     },
   });
 }
@@ -476,6 +484,8 @@ export function useLogin() {
       }
       queryClient.invalidateQueries({ queryKey: ["callerProfile"] });
       queryClient.invalidateQueries({ queryKey: ["hasAccount"] });
+      void queryClient.refetchQueries({ queryKey: ["hasAccount"] });
+      void queryClient.refetchQueries({ queryKey: ["callerProfile"] });
     },
   });
 }
@@ -499,6 +509,8 @@ export function useHasAccount() {
       return actor.hasAccount();
     },
     enabled: !!actor && !actorFetching,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 }
 

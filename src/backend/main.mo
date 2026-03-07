@@ -5,18 +5,15 @@ import Iter "mo:core/Iter";
 import Nat "mo:core/Nat";
 import Int "mo:core/Int";
 import Text "mo:core/Text";
-import Time "mo:core/Time";
 import Order "mo:core/Order";
 import Runtime "mo:core/Runtime";
+import Time "mo:core/Time";
 import Principal "mo:core/Principal";
 
 import AccessControl "authorization/access-control";
 import MixinAuthorization "authorization/MixinAuthorization";
-import Migration "migration";
 
-(with migration = Migration.run)
 actor {
-  // Types
   public type Profile = {
     name : Text;
     phone : Text;
@@ -123,7 +120,6 @@ actor {
     principalId : Principal;
   };
 
-  // State
   let profiles = Map.empty<Principal, Profile>();
   let transactions = Map.empty<Nat, Transaction>();
   let notifications = Map.empty<Principal, [Notification]>();
@@ -131,7 +127,6 @@ actor {
   let accounts = Map.empty<Text, Account>();
   let principalToPhone = Map.empty<Principal, Text>();
 
-  // ID Counters
   var nextTransactionId = 1;
   var nextNotificationId = 1;
   var nextRequestId = 1;
@@ -139,7 +134,21 @@ actor {
   let accessControlState = AccessControl.initState();
   include MixinAuthorization(accessControlState);
 
-  // Helper Functions
+  func ensureUserRole(caller : Principal) {
+    switch (principalToPhone.get(caller)) {
+      case (null) {};
+      case (?_) {
+        if (not AccessControl.hasPermission(accessControlState, caller, #user)) {
+          accessControlState.userRoles.add(caller, #user);
+        };
+      };
+    };
+  };
+
+  func hasUserAccess(caller : Principal) : Bool {
+    AccessControl.hasPermission(accessControlState, caller, #user) or principalToPhone.containsKey(caller)
+  };
+
   func getProfileByUpi(upiId : Text) : ?Profile {
     for ((_, profile) in profiles.entries()) {
       if (profile.upiId == upiId) { return ?profile };
@@ -183,7 +192,6 @@ actor {
   func checkAndMigrateProfile(caller : Principal) : ?Profile {
     switch (profiles.get(caller)) {
       case (null) {
-        // Try to migrate profile via principalToPhone
         switch (principalToPhone.get(caller)) {
           case (?phone) {
             switch (getProfileByPhone(phone)) {
@@ -201,7 +209,6 @@ actor {
     };
   };
 
-  // Account Management Functions
   public shared ({ caller }) func signup(name : Text, phone : Text, passwordHash : Text, mpinHash : Text) : async () {
     if (accounts.containsKey(phone)) {
       Runtime.trap("Phone number already registered");
@@ -234,7 +241,6 @@ actor {
       case (?account) {
         if (account.passwordHash != passwordHash) { return null };
 
-        // Find and remove old principal entries for this phone
         var oldPrincipal : ?Principal = null;
         for ((principal, ph) in principalToPhone.entries()) {
           if (ph == phone) {
@@ -250,15 +256,12 @@ actor {
           case (null) {};
         };
 
-        // Update principalToPhone with new caller
         principalToPhone.add(caller, phone);
 
-        // Assign user role to new caller if not already present
         if (not AccessControl.hasPermission(accessControlState, caller, #user)) {
           accessControlState.userRoles.add(caller, #user);
         };
 
-        // Update accounts map with latest principalId
         let updatedAccount : Account = {
           phone = account.phone;
           passwordHash = account.passwordHash;
@@ -267,7 +270,6 @@ actor {
         };
         accounts.add(phone, updatedAccount);
 
-        // Migrate profile to new caller principal
         switch (getProfileByPhone(phone)) {
           case (null) { null };
           case (?profile) {
@@ -341,27 +343,24 @@ actor {
     };
   };
 
-  // Profile Functions
-  public query ({ caller }) func getCallerUserProfile() : async ?Profile {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view profiles");
-    };
-    switch (profiles.get(caller)) {
-      case (null) {
-        switch (principalToPhone.get(caller)) {
-          case (?phone) {
+  public shared ({ caller }) func getCallerUserProfile() : async ?Profile {
+    switch (principalToPhone.get(caller)) {
+      case (null) { return null };
+      case (?phone) {
+        ensureUserRole(caller);
+        switch (profiles.get(caller)) {
+          case (null) {
             switch (getProfileByPhone(phone)) {
+              case (null) { return null };
               case (?profile) {
                 profiles.add(caller, profile);
-                ?profile;
+                return ?profile;
               };
-              case (null) { Runtime.trap("Profile not found") };
             };
           };
-          case (null) { Runtime.trap("Profile not found") };
+          case (?profile) { return ?profile };
         };
       };
-      case (?profile) { ?profile };
     };
   };
 
@@ -375,7 +374,6 @@ actor {
           case (?phone) {
             switch (getProfileByPhone(phone)) {
               case (?profile) {
-                profiles.add(user, profile);
                 ?profile;
               };
               case (null) { Runtime.trap("Profile not found") };
@@ -388,7 +386,6 @@ actor {
     };
   };
 
-  // Lookup profile by UPI ID without authentication
   public query ({ caller }) func lookupProfileByUpiId(upiId : Text) : async ?{ name : Text; upiId : Text } {
     switch (getProfileByUpi(upiId)) {
       case (null) { null };
@@ -402,6 +399,7 @@ actor {
   };
 
   public shared ({ caller }) func saveCallerUserProfile(name : Text, phone : Text) : async () {
+    ensureUserRole(caller);
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can save profiles");
     };
@@ -439,7 +437,6 @@ actor {
     profiles.add(caller, profile);
   };
 
-  // Public phone lookup function
   public query ({ caller }) func lookupProfileByPhone(phone : Text) : async ?{ name : Text; upiId : Text } {
     switch (getProfileByPhone(phone)) {
       case (null) { null };
@@ -453,6 +450,7 @@ actor {
   };
 
   public shared ({ caller }) func createOrUpdateProfile(name : Text, phone : Text) : async () {
+    ensureUserRole(caller);
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can create or update profiles");
     };
@@ -490,31 +488,29 @@ actor {
     profiles.add(caller, profile);
   };
 
-  public query ({ caller }) func getProfile() : async ?Profile {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view profiles");
-    };
-    switch (profiles.get(caller)) {
-      case (null) {
-        switch (principalToPhone.get(caller)) {
-          case (?phone) {
+  public shared ({ caller }) func getProfile() : async ?Profile {
+    switch (principalToPhone.get(caller)) {
+      case (null) { return null };
+      case (?phone) {
+        ensureUserRole(caller);
+        switch (profiles.get(caller)) {
+          case (null) {
             switch (getProfileByPhone(phone)) {
+              case (null) { return null };
               case (?profile) {
                 profiles.add(caller, profile);
-                ?profile;
+                return ?profile;
               };
-              case (null) { Runtime.trap("Profile not found") };
             };
           };
-          case (null) { Runtime.trap("Profile not found") };
+          case (?profile) { return ?profile };
         };
       };
-      case (?profile) { ?profile };
     };
   };
 
   public query ({ caller }) func getWalletBalance() : async Float {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+    if (not hasUserAccess(caller)) {
       Runtime.trap("Unauthorized: Only users can view wallet balance");
     };
 
@@ -524,7 +520,6 @@ actor {
           case (?phone) {
             switch (getProfileByPhone(phone)) {
               case (?profile) {
-                profiles.add(caller, profile);
                 profile.walletBalance;
               };
               case (null) { Runtime.trap("Profile not found") };
@@ -538,7 +533,7 @@ actor {
   };
 
   public query ({ caller }) func getWalletBalanceByUpiId(upiId : Text) : async Float {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+    if (not hasUserAccess(caller)) {
       Runtime.trap("Unauthorized: Only users can view wallet balances");
     };
 
@@ -549,7 +544,7 @@ actor {
   };
 
   public query ({ caller }) func getWalletBalanceByPhone(phone : Text) : async Float {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+    if (not hasUserAccess(caller)) {
       Runtime.trap("Unauthorized: Only users can view wallet balances");
     };
 
@@ -560,6 +555,7 @@ actor {
   };
 
   public shared ({ caller }) func topUpWallet(amount : Float) : async () {
+    ensureUserRole(caller);
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can top up wallet");
     };
@@ -613,6 +609,7 @@ actor {
   };
 
   public shared ({ caller }) func sendMoney(to : Text, amount : Float, note : ?Text, confirmedByMpin : Bool) : async () {
+    ensureUserRole(caller);
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can send money");
     };
@@ -711,7 +708,7 @@ actor {
   };
 
   public query ({ caller }) func getTransactionHistory() : async [Transaction] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+    if (not hasUserAccess(caller)) {
       Runtime.trap("Unauthorized: Only users can view transaction history");
     };
 
@@ -720,10 +717,7 @@ actor {
         switch (principalToPhone.get(caller)) {
           case (?phone) {
             switch (getProfileByPhone(phone)) {
-              case (?p) {
-                profiles.add(caller, p);
-                p;
-              };
+              case (?p) { p };
               case (null) { Runtime.trap("Profile not found") };
             };
           };
@@ -742,7 +736,7 @@ actor {
   };
 
   public query ({ caller }) func getRecentTransactions() : async [Transaction] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+    if (not hasUserAccess(caller)) {
       Runtime.trap("Unauthorized: Only users can view transactions");
     };
 
@@ -751,10 +745,7 @@ actor {
         switch (principalToPhone.get(caller)) {
           case (?phone) {
             switch (getProfileByPhone(phone)) {
-              case (?p) {
-                profiles.add(caller, p);
-                p;
-              };
+              case (?p) { p };
               case (null) { Runtime.trap("Profile not found") };
             };
           };
@@ -781,6 +772,7 @@ actor {
   };
 
   public shared ({ caller }) func requestMoney(to : Text, amount : Float, note : ?Text) : async () {
+    ensureUserRole(caller);
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can request money");
     };
@@ -840,7 +832,7 @@ actor {
   };
 
   public query ({ caller }) func getPendingMoneyRequests() : async [MoneyRequest] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+    if (not hasUserAccess(caller)) {
       Runtime.trap("Unauthorized: Only users can view money requests");
     };
 
@@ -849,10 +841,7 @@ actor {
         switch (principalToPhone.get(caller)) {
           case (?phone) {
             switch (getProfileByPhone(phone)) {
-              case (?p) {
-                profiles.add(caller, p);
-                p;
-              };
+              case (?p) { p };
               case (null) { Runtime.trap("Profile not found") };
             };
           };
@@ -871,6 +860,7 @@ actor {
   };
 
   public shared ({ caller }) func acceptRequest(requestId : Nat, confirmedByMpin : Bool) : async () {
+    ensureUserRole(caller);
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can accept requests");
     };
@@ -983,6 +973,7 @@ actor {
   };
 
   public shared ({ caller }) func declineRequest(requestId : Nat) : async () {
+    ensureUserRole(caller);
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can decline requests");
     };
@@ -1031,6 +1022,7 @@ actor {
   };
 
   public shared ({ caller }) func payBill(billPayment : BillPayment) : async () {
+    ensureUserRole(caller);
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can pay bills");
     };
@@ -1086,26 +1078,8 @@ actor {
   };
 
   public query ({ caller }) func getNotifications() : async [Notification] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+    if (not hasUserAccess(caller)) {
       Runtime.trap("Unauthorized: Only users can view notifications");
-    };
-
-    // Ensure profile is migrated before accessing notifications
-    switch (profiles.get(caller)) {
-      case (null) {
-        switch (principalToPhone.get(caller)) {
-          case (?phone) {
-            switch (getProfileByPhone(phone)) {
-              case (?p) {
-                profiles.add(caller, p);
-              };
-              case (null) { Runtime.trap("Profile not found") };
-            };
-          };
-          case (null) { Runtime.trap("Profile not found") };
-        };
-      };
-      case (?p) {};
     };
 
     switch (notifications.get(caller)) {
@@ -1115,26 +1089,9 @@ actor {
   };
 
   public shared ({ caller }) func markNotificationAsRead(notificationId : Nat) : async () {
+    ensureUserRole(caller);
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can mark notifications as read");
-    };
-
-    // Ensure profile is migrated
-    switch (profiles.get(caller)) {
-      case (null) {
-        switch (principalToPhone.get(caller)) {
-          case (?phone) {
-            switch (getProfileByPhone(phone)) {
-              case (?p) {
-                profiles.add(caller, p);
-              };
-              case (null) { Runtime.trap("Profile not found") };
-            };
-          };
-          case (null) { Runtime.trap("Profile not found") };
-        };
-      };
-      case (?p) {};
     };
 
     switch (notifications.get(caller)) {
@@ -1161,26 +1118,8 @@ actor {
   };
 
   public query ({ caller }) func getUnreadNotificationCount() : async Nat {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+    if (not hasUserAccess(caller)) {
       Runtime.trap("Unauthorized: Only users can view notification count");
-    };
-
-    // Ensure profile is migrated
-    switch (profiles.get(caller)) {
-      case (null) {
-        switch (principalToPhone.get(caller)) {
-          case (?phone) {
-            switch (getProfileByPhone(phone)) {
-              case (?p) {
-                profiles.add(caller, p);
-              };
-              case (null) { Runtime.trap("Profile not found") };
-            };
-          };
-          case (null) { Runtime.trap("Profile not found") };
-        };
-      };
-      case (?p) {};
     };
 
     switch (notifications.get(caller)) {
@@ -1191,13 +1130,12 @@ actor {
     };
   };
 
-  // Admin Panel Functions
   public query ({ caller }) func getAllUsers() : async [(Principal, Profile)] {
     if (not (AccessControl.isAdmin(accessControlState, caller))) {
       Runtime.trap("Unauthorized: Only admins can view all users");
     };
 
-    profiles.toArray();
+    profiles.entries().toArray();
   };
 
   public query ({ caller }) func getAllTransactions() : async [Transaction] {
@@ -1216,15 +1154,15 @@ actor {
     let totalUsers = profiles.size();
     let totalTransactions = transactions.size();
 
-    let totalVolume = transactions.values().toArray().foldLeft(
-      0.0,
-      func(acc, tx) { acc + tx.amount },
-    );
+    var totalVolume = 0.0;
+    for (tx in transactions.values()) {
+      totalVolume += tx.amount;
+    };
 
-    let totalWalletBalance = profiles.values().toArray().foldLeft(
-      0.0,
-      func(acc, profile) { acc + profile.walletBalance },
-    );
+    var totalWalletBalance = 0.0;
+    for (profile in profiles.values()) {
+      totalWalletBalance += profile.walletBalance;
+    };
 
     {
       totalUsers;
